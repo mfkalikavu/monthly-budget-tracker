@@ -251,28 +251,30 @@ const C={
       credit:nz(C.typeSum(D,'Credit card Bill',m,y))
     };
   },
-  // DEBT sheet: one row per (person, type), built from Money Lent expenses and Borrowed income
+  // DEBT sheet: one row per debt EVENT (its own id, assigned when it's
+  // created), built from Money Lent expenses and Borrowed income. Repayments
+  // link to that id directly instead of being matched by name text, so the
+  // same person can have several separate loans without needing different
+  // spellings of their name.
   debts(D){
     const rows=[];
-    D.expenses.forEach(x=>{if(x.t==='Money Lent')rows.push({d:x.d,name:x.n,type:'Money Lent',a:x.a,list:'expenses',id:x.id});});
-    D.income.forEach(x=>{if(x.s==='Borrowed')rows.push({d:x.d,name:x.n,type:'Borrowed',a:x.a,list:'income',id:x.id});});
+    D.expenses.forEach(x=>{if(x.t==='Money Lent'&&x.debtId)rows.push({d:x.d,name:x.n,type:'Money Lent',a:x.a,list:'expenses',id:x.id,debtId:x.debtId});});
+    D.income.forEach(x=>{if(x.s==='Borrowed'&&x.debtId)rows.push({d:x.d,name:x.n,type:'Borrowed',a:x.a,list:'income',id:x.id,debtId:x.debtId});});
     rows.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);
     const map=new Map();
     for(const r of rows){
-      if(!norm(r.name))continue;
-      const key=r.type+'|'+norm(r.name);
-      let e=map.get(key);
-      if(!e){e={key,name:String(r.name).trim(),type:r.type,total:0,returned:0,firstDate:r.d,loans:[],returns:[]};map.set(key,e);}
+      let e=map.get(r.debtId);
+      if(!e){e={key:r.debtId,name:String(r.name).trim(),type:r.type,total:0,returned:0,firstDate:r.d,loans:[],returns:[]};map.set(r.debtId,e);}
       e.total+=r.a; e.loans.push({d:r.d,a:r.a,list:r.list,id:r.id});
     }
     const unmatched=[];
-    const addReturn=(type,x,list)=>{
-      const e=map.get(type+'|'+norm(x.n));
+    const addReturn=(x,list)=>{
+      const e=x.debtId&&map.get(x.debtId);
       if(e){e.returned+=x.a;e.returns.push({d:x.d,a:x.a,list,id:x.id});}
-      else unmatched.push({d:x.d,a:x.a,n:x.n,type,list,id:x.id});
+      else unmatched.push({d:x.d,a:x.a,n:x.n,list,id:x.id});
     };
-    D.income.forEach(x=>{if(x.s==='Debt Return')addReturn('Money Lent',x,'income');});
-    D.expenses.forEach(x=>{if(x.t==='Borrowed Return')addReturn('Borrowed',x,'expenses');});
+    D.income.forEach(x=>{if(x.s==='Debt Return')addReturn(x,'income');});
+    D.expenses.forEach(x=>{if(x.t==='Borrowed Return')addReturn(x,'expenses');});
     const list=[...map.values()];
     list.forEach(e=>{e.total=r2(e.total);e.returned=r2(e.returned);e.remaining=Math.max(0,r2(e.total-e.returned));e.status=e.remaining===0?'Clear':'Pending';});
     const sumOf=t=>r2(list.filter(e=>e.type===t).reduce((s,e)=>s+e.remaining,0));
@@ -306,24 +308,39 @@ const I={
 let storageOK=true;
 function fromSeed(){
   const s=SEED||{income:[],expenses:[]};
+  const income=s.income.map(x=>({id:uid(),d:x.d,s:x.s,a:x.a,n:x.n||'',debtId:''}));
+  const expenses=s.expenses.map(x=>({id:uid(),d:x.d,t:x.t,a:x.a,p:x.p||null,n:x.n||'',debtId:''}));
+  migrateDebtIds(income,expenses);
   return {
     v:1,
-    income:s.income.map(x=>({id:uid(),d:x.d,s:x.s,a:x.a,n:x.n||''})),
-    expenses:s.expenses.map(x=>({id:uid(),d:x.d,t:x.t,a:x.a,p:x.p||null,n:x.n||''})),
+    income,expenses,
     targets:Object.assign({},DEFAULT_TARGETS),
     lists:JSON.parse(JSON.stringify(DEFAULT_LISTS))
   };
 }
 const isDate=d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d);
+// One-time upgrade for data saved before every debt had its own id: groups
+// old entries by (type, name) into a generated debtId so they keep working.
+// New entries never rely on name-matching - see saveTx().
+function migrateDebtIds(income,expenses){
+  const keyOf=(type,name)=>type+'|'+norm(name);
+  const loanId=new Map();
+  expenses.forEach(x=>{if(x.t==='Money Lent'&&!x.debtId){const k=keyOf('Money Lent',x.n);if(!loanId.has(k))loanId.set(k,uid());x.debtId=loanId.get(k);}});
+  income.forEach(x=>{if(x.s==='Borrowed'&&!x.debtId){const k=keyOf('Borrowed',x.n);if(!loanId.has(k))loanId.set(k,uid());x.debtId=loanId.get(k);}});
+  income.forEach(x=>{if(x.s==='Debt Return'&&!x.debtId){const k=keyOf('Money Lent',x.n);if(loanId.has(k))x.debtId=loanId.get(k);}});
+  expenses.forEach(x=>{if(x.t==='Borrowed Return'&&!x.debtId){const k=keyOf('Borrowed',x.n);if(loanId.has(k))x.debtId=loanId.get(k);}});
+}
 function normalize(d){
   if(!d||!Array.isArray(d.income)||!Array.isArray(d.expenses))return null;
   const ok=(x,k)=>x&&isDate(x.d)&&Number.isFinite(+x.a)&&typeof x[k]==='string'&&x[k];
   if(!d.income.every(x=>ok(x,'s'))||!d.expenses.every(x=>ok(x,'t')))return null;
   const lists=d.lists||{};
+  const income=d.income.map(x=>({id:x.id||uid(),d:x.d,s:x.s,a:r2(+x.a),n:String(x.n||''),debtId:x.debtId||''}));
+  const expenses=d.expenses.map(x=>({id:x.id||uid(),d:x.d,t:x.t,a:r2(+x.a),p:x.p||null,n:String(x.n||''),debtId:x.debtId||''}));
+  migrateDebtIds(income,expenses);
   return {
     v:1,
-    income:d.income.map(x=>({id:x.id||uid(),d:x.d,s:x.s,a:r2(+x.a),n:String(x.n||'')})),
-    expenses:d.expenses.map(x=>({id:x.id||uid(),d:x.d,t:x.t,a:r2(+x.a),p:x.p||null,n:String(x.n||'')})),
+    income,expenses,
     targets:Object.assign({},DEFAULT_TARGETS,d.targets||{}),
     lists:{
       sources:Array.isArray(lists.sources)?lists.sources:DEFAULT_LISTS.sources.slice(),
@@ -347,7 +364,7 @@ function saveData(){
 
 const S={
   data:null,
-  ui:{tab:'dash',m:NOW.getMonth(),y:NOW.getFullYear(),scope:{income:'month',expenses:'month'},q:{income:'',expenses:''},debtFilter:'all',sheet:null,confirm:null,exportText:null,lastFocus:null}
+  ui:{tab:'dash',m:NOW.getMonth(),y:NOW.getFullYear(),scope:{income:'month',expenses:'month'},q:{income:'',expenses:''},debtFilter:'all',debtShowClear:false,sheet:null,confirm:null,exportText:null,lastFocus:null}
 };
 
 /* ---------- small helpers ---------- */
@@ -469,22 +486,25 @@ function vList(kind){
 
 const DEBT_FILTERS=[['all','All'],['lent','Receivable'],['borrowed','Payable'],['pending','Pending'],['clear','Clear']];
 function vDebt(){
-  const dd=C.debts(S.data),f=S.ui.debtFilter;
+  const dd=C.debts(S.data),f=S.ui.debtFilter,showClear=S.ui.debtShowClear;
   let list=dd.list;
   if(f==='lent')list=list.filter(e=>e.type==='Money Lent');
   if(f==='borrowed')list=list.filter(e=>e.type==='Borrowed');
   if(f==='pending')list=list.filter(e=>e.status==='Pending');
   if(f==='clear')list=list.filter(e=>e.status==='Clear');
-  const alert=dd.unmatched.length?`<p class="notice">${dd.unmatched.length} repayment${dd.unmatched.length===1?'':'s'} (${money(dd.unmatched.reduce((t,u)=>t+u.a,0))}) ${dd.unmatched.length===1?"doesn\u2019t":"don\u2019t"} match a loan name, so ${dd.unmatched.length===1?'it isn\u2019t':'they aren\u2019t'} counted. Check the spelling of ${dd.unmatched.length===1?'the name':'the names'}: ${dd.unmatched.slice(0,3).map(u=>'\u201C'+esc(u.n||'blank')+'\u201D').join(', ')}.</p>`:'';
+  const clearCount=dd.list.filter(e=>e.status==='Clear').length;
+  if(f!=='clear'&&!showClear)list=list.filter(e=>e.status!=='Clear');
+  const alert=dd.unmatched.length?`<p class="notice">${dd.unmatched.length} repayment${dd.unmatched.length===1?'':'s'} (${money(dd.unmatched.reduce((t,u)=>t+u.a,0))}) ${dd.unmatched.length===1?"isn\u2019t":"aren\u2019t"} linked to a debt, so ${dd.unmatched.length===1?'it isn\u2019t':'they aren\u2019t'} counted.</p>`:'';
   return `<dl class="tiles" style="margin-top:14px">
     <div class="tile inc"><dt>Receivable</dt><dd><span class="v">${money(dd.receivable)}</span><small>Others owe you</small></dd></div>
     <div class="tile exp"><dt>Payable</dt><dd><span class="v">${money(dd.payable)}</span><small>You owe others</small></dd></div>
   </dl>${alert}
   <div class="chips" role="group" aria-label="Filter debts">${DEBT_FILTERS.map(([v,l])=>`<button class="chip" data-act="dfilter" data-v="${v}" aria-pressed="${f===v}">${l}</button>`).join('')}</div>
+  ${f!=='clear'&&clearCount?`<p class="hint" style="margin:-4px 0 10px">${clearCount} cleared debt${clearCount===1?'':'s'} ${showClear?'shown':'hidden'}. <button class="btn sm" data-act="toggleclear" style="min-height:34px;padding:0 12px;display:inline-block;width:auto">${showClear?'Hide':'Show'}</button></p>`:''}
   ${list.length?list.map(e=>{
     const pct=e.total>0?Math.min(100,e.returned/e.total*100):0;
     return `<button class="debt" data-act="debt" data-key="${esc(e.key)}">
-      <div class="debt-top"><div><b>${esc(e.name)}</b><small>${e.type==='Money Lent'?'You lent':'You borrowed'}</small></div><span class="pill ${e.status==='Clear'?'clear':'pending'}">${e.status}</span></div>
+      <div class="debt-top"><div><b>${esc(e.name)}</b><small>${e.type==='Money Lent'?'You lent':'You borrowed'} \u00B7 ${esc(fmtDate(e.firstDate))}</small></div><span class="pill ${e.status==='Clear'?'clear':'pending'}">${e.status}</span></div>
       <div class="prog" role="img" aria-label="${Math.round(pct)}% returned"><span style="width:${pct.toFixed(1)}%"></span></div>
       <dl class="nums"><div><dt>Total</dt><dd>${money(e.total)}</dd></div><div><dt>Returned</dt><dd>${money(e.returned)}</dd></div><div><dt>Remaining</dt><dd>${money(e.remaining)}</dd></div></dl>
     </button>`;}).join('')
@@ -578,7 +598,7 @@ function txSheetHTML(sh){
       <select id="fCat"><option value="">Choose one</option>${cats.map(c=>`<option${c===v.c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
     <div class="field"><label for="fAmt">Amount (\u20B9)</label><input id="fAmt" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(v.a)}" placeholder="0"></div>
     ${isInc?'':`<div class="field"><label for="fMode">Payment mode</label><select id="fMode"><option value="">Not set</option>${modes.map(c=>`<option${c===v.p?' selected':''}>${esc(c)}</option>`).join('')}</select></div>`}
-    <div class="field"><label for="fNote" id="fNoteLabel">Notes</label><input id="fNote" type="text" list="fNames" autocomplete="off" value="${esc(v.n)}" placeholder="Optional"><datalist id="fNames"></datalist><p class="hint" id="fNoteHint"></p></div>
+    <div class="field" id="fNoteWrap"></div>
     <div id="fErr" role="alert"></div>
     <div class="actions">
       <button class="btn primary" data-act="save">${edit?'Save changes':title}</button>
@@ -586,19 +606,68 @@ function txSheetHTML(sh){
     </div>
   </div>`;
 }
+function noteMode(cat){
+  return (cat==='Debt Return'||cat==='Borrowed Return')?'return':'text';
+}
+// Renders the field that used to be free-typed "Notes". For a new loan
+// (Money Lent / Borrowed) it's still a name you type, since it's a brand
+// new debt. For a repayment (Debt Return / Borrowed Return) it's a picker
+// over the actual open debts, storing the chosen debt's id - no more typing
+// a name that has to match a previous spelling exactly.
+function noteFieldHTML(cat,v,locked){
+  const isCreate=cat==='Money Lent'||cat==='Borrowed';
+  if(noteMode(cat)==='return'){
+    const wantType=cat==='Debt Return'?'Money Lent':'Borrowed';
+    const open=C.debts(S.data).list.filter(e=>e.type===wantType&&(e.status==='Pending'||e.key===v.debtId));
+    if(locked){
+      const e=open.find(x=>x.key===v.debtId);
+      return `<span class="lbl">Debt being repaid</span>
+        <p class="hint" style="margin-top:2px">${e?esc(e.name)+' \u00B7 '+money(e.remaining)+' remaining':'Selected debt'}</p>
+        <input type="hidden" id="fDebtId" value="${esc(v.debtId||'')}">`;
+    }
+    if(!open.length){
+      return `<span class="lbl">${wantType==='Money Lent'?'Receivable':'Payable'} debt</span>
+        <p class="hint" style="margin-top:2px">No open debts of this kind yet. Add one from the Debt tab first.</p>
+        <input type="hidden" id="fDebtId" value="">`;
+    }
+    return `<label for="fDebtSel">Which debt is this for?</label>
+      <select id="fDebtSel">${open.map(e=>`<option value="${esc(e.key)}"${e.key===v.debtId?' selected':''}>${esc(e.name)} \u2014 ${money(e.remaining)} remaining (${esc(fmtDate(e.firstDate))})</option>`).join('')}</select>`;
+  }
+  return `<label for="fNote">${isCreate?'Person\u2019s name':'Notes'}</label>
+    <input id="fNote" type="text" autocomplete="off" value="${esc(v.n||'')}" placeholder="${isCreate?'Name of the person':'Optional'}">
+    <p class="hint">${isCreate?'Each new loan gets its own record, so reusing the same name is fine.':''}</p>`;
+}
 function syncPerson(){
-  const cat=($('#fCat')||{}).value;if(cat===undefined)return;
-  const isDebt=DEBT_CATS.has(cat);
-  $('#fNoteLabel').textContent=isDebt?'Person\u2019s name':'Notes';
-  $('#fNote').placeholder=isDebt?'Name of the person':'Optional';
-  $('#fNoteHint').textContent=isDebt?'The debt is tracked by this name, so spell it the same way each time.':'';
-  const type=cat==='Debt Return'?'Money Lent':cat==='Borrowed Return'?'Borrowed':null;
-  const names=[];
-  C.debts(S.data).list.forEach(e=>{if((!type||e.type===type)&&!names.includes(e.name))names.push(e.name);});
-  $('#fNames').innerHTML=isDebt?names.map(n=>`<option value="${esc(n)}">`).join(''):'';
+  const catEl=$('#fCat');if(!catEl)return;
+  const cat=catEl.value,sh=S.ui.sheet||{},wrap=$('#fNoteWrap');
+  const mode=noteMode(cat),prevMode=wrap.dataset.mode||'';
+  if(mode==='text'&&prevMode==='text'){
+    const isCreate=cat==='Money Lent'||cat==='Borrowed';
+    const lbl=$('label[for="fNote"]',wrap);if(lbl)lbl.textContent=isCreate?'Person\u2019s name':'Notes';
+    const inp=$('#fNote',wrap);if(inp)inp.placeholder=isCreate?'Name of the person':'Optional';
+    const hint=$('.hint',wrap);if(hint)hint.textContent=isCreate?'Each new loan gets its own record, so reusing the same name is fine.':'';
+    return;
+  }
+  let curDebtId='',curNote='';
+  if(sh.id){
+    const rec=S.data[sh.kind].find(x=>x.id===sh.id);
+    if(rec){curDebtId=rec.debtId||'';curNote=rec.n||'';}
+  }else if(sh.prefill){
+    curDebtId=sh.prefill.debtId||'';curNote=sh.prefill.n||'';
+  }
+  wrap.innerHTML=noteFieldHTML(cat,{n:curNote,debtId:curDebtId},!!sh.lock);
+  wrap.dataset.mode=mode;
 }
 function readForm(){
-  return {d:$('#fDate').value,c:$('#fCat').value,a:$('#fAmt').value,p:$('#fMode')?$('#fMode').value:'',n:$('#fNote').value};
+  const cat=$('#fCat').value;
+  let n='',debtId='';
+  if(noteMode(cat)==='return'){
+    debtId=$('#fDebtId')?$('#fDebtId').value:($('#fDebtSel')?$('#fDebtSel').value:'');
+    const e=debtByKey(debtId);n=e?e.name:'';
+  }else{
+    n=$('#fNote')?$('#fNote').value:'';
+  }
+  return {d:$('#fDate').value,c:cat,a:$('#fAmt').value,p:$('#fMode')?$('#fMode').value:'',n,debtId};
 }
 function debtSheetHTML(sh){
   const e=C.debts(S.data).list.find(x=>x.key===sh.key);
@@ -666,7 +735,8 @@ function renderSheet(fresh){
       const cat=$('#fCat').value;
       if(sh.id)first=$('#fAmt');
       else if(!cat)first=$('#fCat');
-      else if(DEBT_CATS.has(cat)&&!$('#fNote').value)first=$('#fNote');
+      else if(noteMode(cat)==='return')first=$('#fDebtSel')||$('#fAmt');
+      else if((cat==='Money Lent'||cat==='Borrowed')&&$('#fNote')&&!$('#fNote').value)first=$('#fNote');
       else first=$('#fAmt');
     }
     if(!first)first=sheet.querySelector('button');
@@ -695,15 +765,21 @@ function saveTx(){
   const sh=S.ui.sheet,kind=sh.kind,isInc=kind==='income',f=readForm();
   const fail=m=>{$('#fErr').innerHTML=`<p class="err">${esc(m)}</p>`;};
   const amt=parseFloat(f.a);
+  const isDebtCreate=f.c==='Money Lent'||f.c==='Borrowed';
+  const isDebtReturn=f.c==='Debt Return'||f.c==='Borrowed Return';
   if(!isDate(f.d))return fail('Pick a date.');
   if(!f.c)return fail(isInc?'Choose a source.':'Choose an expense type.');
   if(!(amt>0))return fail('Enter an amount greater than zero.');
-  if(DEBT_CATS.has(f.c)&&!f.n.trim())return fail('Enter the person\u2019s name so the debt can be tracked.');
+  if(isDebtCreate&&!f.n.trim())return fail('Enter the person\u2019s name so the debt can be tracked.');
+  if(isDebtReturn&&!f.debtId)return fail('Choose which debt this repayment is for.');
   let rec=sh.id?S.data[kind].find(x=>x.id===sh.id):null;
   const isNew=!rec;
   if(isNew){rec={id:uid()};}
   rec.d=f.d;rec.a=r2(amt);rec.n=f.n.trim();
   if(isInc)rec.s=f.c;else{rec.t=f.c;rec.p=f.p||null;}
+  if(isDebtCreate&&!rec.debtId)rec.debtId=uid();
+  else if(isDebtReturn)rec.debtId=f.debtId;
+  else rec.debtId='';
   if(isNew)S.data[kind].push(rec);
   saveData();
   if(!badDate(f.d)){S.ui.m=mOf(f.d);S.ui.y=yOf(f.d);}
@@ -759,6 +835,7 @@ document.addEventListener('click',ev=>{
     case 'next':shiftPeriod(1);break;
     case 'scope':S.ui.scope[S.ui.tab]=d.v;render();break;
     case 'dfilter':S.ui.debtFilter=d.v;render();break;
+    case 'toggleclear':S.ui.debtShowClear=!S.ui.debtShowClear;render();break;
     case 'add':openSheet({type:'tx',kind:d.kind||'expenses',id:null,prefill:{}});break;
     case 'edit':openSheet({type:'tx',kind:d.kind,id:d.id});break;
     case 'kind':{const p=readForm();S.ui.sheet={type:'tx',kind:d.kind,id:null,prefill:{d:p.d,a:p.a,n:p.n}};renderSheet(true);break;}
@@ -772,7 +849,7 @@ document.addEventListener('click',ev=>{
     case 'newborrowed':S.ui.sheet={type:'tx',kind:'income',id:null,lock:true,prefill:{c:'Borrowed'}};renderSheet(true);break;
     case 'debt':openSheet({type:'debt',key:d.key});break;
     case 'repay':{const e=debtByKey(d.key);if(!e)break;const lent=e.type==='Money Lent';
-      S.ui.sheet={type:'tx',kind:lent?'income':'expenses',id:null,lock:true,prefill:{c:lent?'Debt Return':'Borrowed Return',n:e.name,a:e.remaining}};renderSheet(true);break;}
+      S.ui.sheet={type:'tx',kind:lent?'income':'expenses',id:null,lock:true,prefill:{c:lent?'Debt Return':'Borrowed Return',n:e.name,a:e.remaining,debtId:e.key}};renderSheet(true);break;}
     case 'more':{const e=debtByKey(d.key);if(!e)break;const lent=e.type==='Money Lent';
       S.ui.sheet={type:'tx',kind:lent?'expenses':'income',id:null,lock:true,prefill:{c:lent?'Money Lent':'Borrowed',n:e.name}};renderSheet(true);break;}
     case 'theme':setTheme(d.v);renderSheet();break;
