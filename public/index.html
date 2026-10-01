@@ -253,25 +253,36 @@ const C={
       credit:nz(C.typeSum(D,'Credit card Bill',m,y))
     };
   },
-  // DEBT sheet: one row per (person, type), built from Money Lent expenses and Borrowed income
+  // DEBT sheet: one row per person, debt type, and lending/borrowing date.
+  // Repayments are applied oldest-first when a person has multiple dated debts.
   debts(D){
     const rows=[];
     D.expenses.forEach(x=>{if(x.t==='Money Lent')rows.push({d:x.d,name:x.n,type:'Money Lent',a:x.a,r:x.r||'',list:'expenses',id:x.id});});
     D.income.forEach(x=>{if(x.s==='Borrowed')rows.push({d:x.d,name:x.n,type:'Borrowed',a:x.a,r:x.r||'',list:'income',id:x.id});});
-    rows.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);
+    rows.sort((a,b)=>a.d.localeCompare(b.d));
     const map=new Map();
     for(const r of rows){
       if(!norm(r.name))continue;
-      const key=r.type+'|'+norm(r.name);
+      const key=r.type+'|'+norm(r.name)+'|'+r.d;
       let e=map.get(key);
       if(!e){e={key,name:String(r.name).trim(),type:r.type,total:0,returned:0,firstDate:r.d,loans:[],returns:[]};map.set(key,e);}
       e.total+=r.a; e.loans.push({d:r.d,a:r.a,r:r.r||'',list:r.list,id:r.id});
     }
     const unmatched=[];
+    const byPersonType=(type,name)=>[...map.values()].filter(e=>e.type===type&&norm(e.name)===norm(name)).sort((a,b)=>a.firstDate.localeCompare(b.firstDate));
     const addReturn=(type,x,list)=>{
-      const e=map.get(type+'|'+norm(x.n));
-      if(e){e.returned+=x.a;e.returns.push({d:x.d,a:x.a,r:x.r||'',list,id:x.id});}
-      else unmatched.push({d:x.d,a:x.a,n:x.n,type,list,id:x.id});
+      const debts=byPersonType(type,x.n);
+      if(!debts.length){unmatched.push({d:x.d,a:x.a,n:x.n,type,list,id:x.id});return;}
+      let left=r2(x.a),first=true;
+      for(const e of debts){
+        const available=Math.max(0,r2(e.total-e.returned));
+        if(available<=0||left<=0)continue;
+        const applied=r2(Math.min(available,left));
+        e.returned=r2(e.returned+applied);
+        e.returns.push({d:x.d,a:applied,r:x.r||'',list,id:first?x.id:null});
+        first=false;left=r2(left-applied);
+      }
+      if(left>0)unmatched.push({d:x.d,a:left,n:x.n,type,list,id:x.id});
     };
     D.income.forEach(x=>{if(x.s==='Debt Return')addReturn('Money Lent',x,'income');});
     D.expenses.forEach(x=>{if(x.t==='Borrowed Return')addReturn('Borrowed',x,'expenses');});
@@ -487,7 +498,7 @@ function vDebt(){
   ${list.length?list.map(e=>{
     const pct=e.total>0?Math.min(100,e.returned/e.total*100):0;
     return `<button class="debt" data-act="debt" data-key="${esc(e.key)}">
-      <div class="debt-top"><div><b>${esc(e.name)}</b><small>${e.type==='Money Lent'?'You lent':'You borrowed'}</small></div><span class="pill ${e.status==='Clear'?'clear':'pending'}">${e.status}</span></div>
+      <div class="debt-top"><div><b>${esc(e.name)}</b><small>${e.type==='Money Lent'?'You lent':'You borrowed'} · ${esc(fmtDate(e.firstDate))}</small></div><span class="pill ${e.status==='Clear'?'clear':'pending'}">${e.status}</span></div>
       <div class="prog" role="img" aria-label="${Math.round(pct)}% returned"><span style="width:${pct.toFixed(1)}%"></span></div>
       <dl class="nums"><div><dt>Total</dt><dd>${money(e.total)}</dd></div><div><dt>Returned</dt><dd>${money(e.returned)}</dd></div><div><dt>Remaining</dt><dd>${money(e.remaining)}</dd></div></dl>
     </button>`;}).join('')
