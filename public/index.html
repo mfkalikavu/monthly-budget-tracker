@@ -351,7 +351,7 @@ function saveData(){
 
 const S={
   data:null,
-  ui:{tab:'dash',m:NOW.getMonth(),y:NOW.getFullYear(),scope:{income:'month',expenses:'month'},q:{income:'',expenses:''},debtFilter:'pending',sheet:null,confirm:null,exportText:null,lastFocus:null}
+  ui:{tab:'dash',m:NOW.getMonth(),y:NOW.getFullYear(),scope:{income:'month',expenses:'month'},q:{income:'',expenses:''},debtFilter:'lent',sheet:null,confirm:null,exportText:null,lastFocus:null}
 };
 
 /* ---------- small helpers ---------- */
@@ -471,13 +471,12 @@ function vList(kind){
   <div id="list">${listHTML(kind)}</div>`;
 }
 
-const DEBT_FILTERS=[['lent','Receivable'],['borrowed','Payable'],['pending','Pending'],['clear','Clear']];
+const DEBT_FILTERS=[['lent','Receivable'],['borrowed','Payable'],['clear','Clear']];
 function vDebt(){
   const dd=C.debts(S.data),f=S.ui.debtFilter;
   let list=dd.list;
   if(f==='lent')list=list.filter(e=>e.type==='Money Lent'&&e.status==='Pending');
   if(f==='borrowed')list=list.filter(e=>e.type==='Borrowed'&&e.status==='Pending');
-  if(f==='pending')list=list.filter(e=>e.status==='Pending');
   if(f==='clear')list=list.filter(e=>e.status==='Clear');
   const alert=dd.unmatched.length?`<p class="notice">${dd.unmatched.length} repayment${dd.unmatched.length===1?'':'s'} (${money(dd.unmatched.reduce((t,u)=>t+u.a,0))}) ${dd.unmatched.length===1?"doesn\u2019t":"don\u2019t"} match a loan name, so ${dd.unmatched.length===1?'it isn\u2019t':'they aren\u2019t'} counted. Check the spelling of ${dd.unmatched.length===1?'the name':'the names'}: ${dd.unmatched.slice(0,3).map(u=>'\u201C'+esc(u.n||'blank')+'\u201D').join(', ')}.</p>`:'';
   return `<dl class="tiles" style="margin-top:14px">
