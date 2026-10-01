@@ -351,7 +351,7 @@ function saveData(){
 
 const S={
   data:null,
-  ui:{tab:'dash',m:NOW.getMonth(),y:NOW.getFullYear(),scope:{income:'month',expenses:'month'},q:{income:'',expenses:''},debtFilter:'all',sheet:null,confirm:null,exportText:null,lastFocus:null}
+  ui:{tab:'dash',m:NOW.getMonth(),y:NOW.getFullYear(),scope:{income:'month',expenses:'month'},q:{income:'',expenses:''},debtFilter:'pending',sheet:null,confirm:null,exportText:null,lastFocus:null}
 };
 
 /* ---------- small helpers ---------- */
@@ -471,24 +471,20 @@ function vList(kind){
   <div id="list">${listHTML(kind)}</div>`;
 }
 
-const DEBT_FILTERS=[['all','All'],['lent','Receivable'],['borrowed','Payable'],['pending','Pending'],['clear','Clear']];
+const DEBT_FILTERS=[['lent','Receivable'],['borrowed','Payable'],['pending','Pending'],['clear','Clear']];
 function vDebt(){
   const dd=C.debts(S.data),f=S.ui.debtFilter;
   let list=dd.list;
-  const hiding=S.data.prefs.hideCleared&&f==='all';
-  if(hiding)list=list.filter(e=>e.status==='Pending');
-  if(f==='lent')list=list.filter(e=>e.type==='Money Lent');
-  if(f==='borrowed')list=list.filter(e=>e.type==='Borrowed');
+  if(f==='lent')list=list.filter(e=>e.type==='Money Lent'&&e.status==='Pending');
+  if(f==='borrowed')list=list.filter(e=>e.type==='Borrowed'&&e.status==='Pending');
   if(f==='pending')list=list.filter(e=>e.status==='Pending');
   if(f==='clear')list=list.filter(e=>e.status==='Clear');
-  const clearedCount=dd.list.length-dd.list.filter(e=>e.status==='Pending').length;
   const alert=dd.unmatched.length?`<p class="notice">${dd.unmatched.length} repayment${dd.unmatched.length===1?'':'s'} (${money(dd.unmatched.reduce((t,u)=>t+u.a,0))}) ${dd.unmatched.length===1?"doesn\u2019t":"don\u2019t"} match a loan name, so ${dd.unmatched.length===1?'it isn\u2019t':'they aren\u2019t'} counted. Check the spelling of ${dd.unmatched.length===1?'the name':'the names'}: ${dd.unmatched.slice(0,3).map(u=>'\u201C'+esc(u.n||'blank')+'\u201D').join(', ')}.</p>`:'';
   return `<dl class="tiles" style="margin-top:14px">
     <div class="tile inc"><dt>Receivable</dt><dd><span class="v">${money(dd.receivable)}</span><small>Others owe you</small></dd></div>
     <div class="tile exp"><dt>Payable</dt><dd><span class="v">${money(dd.payable)}</span><small>You owe others</small></dd></div>
   </dl>${alert}
   <div class="chips" role="group" aria-label="Filter debts">${DEBT_FILTERS.map(([v,l])=>`<button class="chip" data-act="dfilter" data-v="${v}" aria-pressed="${f===v}">${l}</button>`).join('')}</div>
-  ${hiding&&clearedCount?`<p class="hint" style="margin:-4px 0 10px">${clearedCount} cleared ${clearedCount===1?'debt is':'debts are'} hidden. <button class="linklike" data-act="dfilter" data-v="clear">Show cleared</button></p>`:''}
   ${list.length?list.map(e=>{
     const pct=e.total>0?Math.min(100,e.returned/e.total*100):0;
     return `<button class="debt" data-act="debt" data-key="${esc(e.key)}">
@@ -884,11 +880,11 @@ async function downloadDebtPdf(key){
       ctx.fillStyle=ink;ctx.font='600 22px Figtree, Arial, sans-serif';ctx.fillText(fmtDate(e.firstDate),982,358);
 
       // Summary cards
-      const cards=[['TOTAL',money(e.total)],['REPAID',money(e.returned)],['BALANCE',money(e.remaining)]];
+      const cards=[['TOTAL',money(e.total),'#16803C'],['REPAID',money(e.returned),teal],['BALANCE',money(e.remaining),'#C62828']];
       cards.forEach((card,i)=>{
         const x=60+i*373;ctx.fillStyle=soft;ctx.beginPath();ctx.roundRect(x,480,350,130,18);ctx.fill();
         ctx.fillStyle=muted;ctx.font='700 17px Figtree, Arial, sans-serif';ctx.fillText(card[0],x+24,516);
-        ctx.fillStyle=i===2&&e.remaining>0?navy:ink;ctx.font='700 31px Bricolage Grotesque, Arial, sans-serif';ctx.fillText(card[1],x+24,568);
+        ctx.fillStyle=card[2];ctx.font='700 31px Bricolage Grotesque, Arial, sans-serif';ctx.fillText(card[1],x+24,568);
       });
 
       // Table heading
