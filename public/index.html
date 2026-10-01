@@ -158,6 +158,7 @@ td.nil{color:var(--muted)}
 .field{display:grid;gap:6px;margin-bottom:14px}
 .field label,.field .lbl{font-weight:600;font-size:.92rem}
 .hint{font-size:.85rem;color:var(--muted)}
+.linklike{background:none;border:0;padding:0;color:var(--ink);font-weight:700;text-decoration:underline;font-size:inherit}
 .err{color:var(--exp-ink);background:var(--exp-soft);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:.92rem}
 .actions{display:grid;gap:10px;margin-top:6px}
 .btn{min-height:50px;border-radius:14px;border:1px solid var(--line);background:var(--surface);font-weight:700;padding:0 16px}
@@ -214,6 +215,7 @@ const DEFAULT_LISTS={
   modes:['Cash','UPI','Bank','Card']
 };
 const DEFAULT_TARGETS={incomeHigh:25000,incomeLow:20000,expenseLimit:15000,savingsGoal:6000,freelanceGoal:1000};
+const DEFAULT_PREFS={hideCleared:false};
 
 const r2=n=>Math.round((n+Number.EPSILON)*100)/100;
 const yOf=d=>+d.slice(0,4), mOf=d=>+d.slice(5,7)-1;
@@ -251,30 +253,28 @@ const C={
       credit:nz(C.typeSum(D,'Credit card Bill',m,y))
     };
   },
-  // DEBT sheet: one row per debt EVENT (its own id, assigned when it's
-  // created), built from Money Lent expenses and Borrowed income. Repayments
-  // link to that id directly instead of being matched by name text, so the
-  // same person can have several separate loans without needing different
-  // spellings of their name.
+  // DEBT sheet: one row per (person, type), built from Money Lent expenses and Borrowed income
   debts(D){
     const rows=[];
-    D.expenses.forEach(x=>{if(x.t==='Money Lent'&&x.debtId)rows.push({d:x.d,name:x.n,type:'Money Lent',a:x.a,list:'expenses',id:x.id,debtId:x.debtId});});
-    D.income.forEach(x=>{if(x.s==='Borrowed'&&x.debtId)rows.push({d:x.d,name:x.n,type:'Borrowed',a:x.a,list:'income',id:x.id,debtId:x.debtId});});
+    D.expenses.forEach(x=>{if(x.t==='Money Lent')rows.push({d:x.d,name:x.n,type:'Money Lent',a:x.a,r:x.r||'',list:'expenses',id:x.id});});
+    D.income.forEach(x=>{if(x.s==='Borrowed')rows.push({d:x.d,name:x.n,type:'Borrowed',a:x.a,r:x.r||'',list:'income',id:x.id});});
     rows.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);
     const map=new Map();
     for(const r of rows){
-      let e=map.get(r.debtId);
-      if(!e){e={key:r.debtId,name:String(r.name).trim(),type:r.type,total:0,returned:0,firstDate:r.d,loans:[],returns:[]};map.set(r.debtId,e);}
-      e.total+=r.a; e.loans.push({d:r.d,a:r.a,list:r.list,id:r.id});
+      if(!norm(r.name))continue;
+      const key=r.type+'|'+norm(r.name);
+      let e=map.get(key);
+      if(!e){e={key,name:String(r.name).trim(),type:r.type,total:0,returned:0,firstDate:r.d,loans:[],returns:[]};map.set(key,e);}
+      e.total+=r.a; e.loans.push({d:r.d,a:r.a,r:r.r||'',list:r.list,id:r.id});
     }
     const unmatched=[];
-    const addReturn=(x,list)=>{
-      const e=x.debtId&&map.get(x.debtId);
-      if(e){e.returned+=x.a;e.returns.push({d:x.d,a:x.a,list,id:x.id});}
-      else unmatched.push({d:x.d,a:x.a,n:x.n,list,id:x.id});
+    const addReturn=(type,x,list)=>{
+      const e=map.get(type+'|'+norm(x.n));
+      if(e){e.returned+=x.a;e.returns.push({d:x.d,a:x.a,r:x.r||'',list,id:x.id});}
+      else unmatched.push({d:x.d,a:x.a,n:x.n,type,list,id:x.id});
     };
-    D.income.forEach(x=>{if(x.s==='Debt Return')addReturn(x,'income');});
-    D.expenses.forEach(x=>{if(x.t==='Borrowed Return')addReturn(x,'expenses');});
+    D.income.forEach(x=>{if(x.s==='Debt Return')addReturn('Money Lent',x,'income');});
+    D.expenses.forEach(x=>{if(x.t==='Borrowed Return')addReturn('Borrowed',x,'expenses');});
     const list=[...map.values()];
     list.forEach(e=>{e.total=r2(e.total);e.returned=r2(e.returned);e.remaining=Math.max(0,r2(e.total-e.returned));e.status=e.remaining===0?'Clear':'Pending';});
     const sumOf=t=>r2(list.filter(e=>e.type===t).reduce((s,e)=>s+e.remaining,0));
@@ -308,40 +308,27 @@ const I={
 let storageOK=true;
 function fromSeed(){
   const s=SEED||{income:[],expenses:[]};
-  const income=s.income.map(x=>({id:uid(),d:x.d,s:x.s,a:x.a,n:x.n||'',debtId:''}));
-  const expenses=s.expenses.map(x=>({id:uid(),d:x.d,t:x.t,a:x.a,p:x.p||null,n:x.n||'',debtId:''}));
-  migrateDebtIds(income,expenses);
   return {
     v:1,
-    income,expenses,
+    income:s.income.map(x=>({id:uid(),d:x.d,s:x.s,a:x.a,n:x.n||'',r:x.r||''})),
+    expenses:s.expenses.map(x=>({id:uid(),d:x.d,t:x.t,a:x.a,p:x.p||null,n:x.n||'',r:x.r||''})),
     targets:Object.assign({},DEFAULT_TARGETS),
-    lists:JSON.parse(JSON.stringify(DEFAULT_LISTS))
+    lists:JSON.parse(JSON.stringify(DEFAULT_LISTS)),
+    prefs:Object.assign({},DEFAULT_PREFS)
   };
 }
 const isDate=d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d);
-// One-time upgrade for data saved before every debt had its own id: groups
-// old entries by (type, name) into a generated debtId so they keep working.
-// New entries never rely on name-matching - see saveTx().
-function migrateDebtIds(income,expenses){
-  const keyOf=(type,name)=>type+'|'+norm(name);
-  const loanId=new Map();
-  expenses.forEach(x=>{if(x.t==='Money Lent'&&!x.debtId){const k=keyOf('Money Lent',x.n);if(!loanId.has(k))loanId.set(k,uid());x.debtId=loanId.get(k);}});
-  income.forEach(x=>{if(x.s==='Borrowed'&&!x.debtId){const k=keyOf('Borrowed',x.n);if(!loanId.has(k))loanId.set(k,uid());x.debtId=loanId.get(k);}});
-  income.forEach(x=>{if(x.s==='Debt Return'&&!x.debtId){const k=keyOf('Money Lent',x.n);if(loanId.has(k))x.debtId=loanId.get(k);}});
-  expenses.forEach(x=>{if(x.t==='Borrowed Return'&&!x.debtId){const k=keyOf('Borrowed',x.n);if(loanId.has(k))x.debtId=loanId.get(k);}});
-}
 function normalize(d){
   if(!d||!Array.isArray(d.income)||!Array.isArray(d.expenses))return null;
   const ok=(x,k)=>x&&isDate(x.d)&&Number.isFinite(+x.a)&&typeof x[k]==='string'&&x[k];
   if(!d.income.every(x=>ok(x,'s'))||!d.expenses.every(x=>ok(x,'t')))return null;
   const lists=d.lists||{};
-  const income=d.income.map(x=>({id:x.id||uid(),d:x.d,s:x.s,a:r2(+x.a),n:String(x.n||''),debtId:x.debtId||''}));
-  const expenses=d.expenses.map(x=>({id:x.id||uid(),d:x.d,t:x.t,a:r2(+x.a),p:x.p||null,n:String(x.n||''),debtId:x.debtId||''}));
-  migrateDebtIds(income,expenses);
   return {
     v:1,
-    income,expenses,
+    income:d.income.map(x=>({id:x.id||uid(),d:x.d,s:x.s,a:r2(+x.a),n:String(x.n||''),r:String(x.r||'')})),
+    expenses:d.expenses.map(x=>({id:x.id||uid(),d:x.d,t:x.t,a:r2(+x.a),p:x.p||null,n:String(x.n||''),r:String(x.r||'')})),
     targets:Object.assign({},DEFAULT_TARGETS,d.targets||{}),
+    prefs:Object.assign({},DEFAULT_PREFS,d.prefs||{}),
     lists:{
       sources:Array.isArray(lists.sources)?lists.sources:DEFAULT_LISTS.sources.slice(),
       types:Array.isArray(lists.types)?lists.types:DEFAULT_LISTS.types.slice(),
@@ -364,7 +351,7 @@ function saveData(){
 
 const S={
   data:null,
-  ui:{tab:'dash',m:NOW.getMonth(),y:NOW.getFullYear(),scope:{income:'month',expenses:'month'},q:{income:'',expenses:''},debtFilter:'all',debtShowClear:false,sheet:null,confirm:null,exportText:null,lastFocus:null}
+  ui:{tab:'dash',m:NOW.getMonth(),y:NOW.getFullYear(),scope:{income:'month',expenses:'month'},q:{income:'',expenses:''},debtFilter:'all',sheet:null,confirm:null,exportText:null,lastFocus:null}
 };
 
 /* ---------- small helpers ---------- */
@@ -486,25 +473,26 @@ function vList(kind){
 
 const DEBT_FILTERS=[['all','All'],['lent','Receivable'],['borrowed','Payable'],['pending','Pending'],['clear','Clear']];
 function vDebt(){
-  const dd=C.debts(S.data),f=S.ui.debtFilter,showClear=S.ui.debtShowClear;
+  const dd=C.debts(S.data),f=S.ui.debtFilter;
   let list=dd.list;
+  const hiding=S.data.prefs.hideCleared&&f==='all';
+  if(hiding)list=list.filter(e=>e.status==='Pending');
   if(f==='lent')list=list.filter(e=>e.type==='Money Lent');
   if(f==='borrowed')list=list.filter(e=>e.type==='Borrowed');
   if(f==='pending')list=list.filter(e=>e.status==='Pending');
   if(f==='clear')list=list.filter(e=>e.status==='Clear');
-  const clearCount=dd.list.filter(e=>e.status==='Clear').length;
-  if(f!=='clear'&&!showClear)list=list.filter(e=>e.status!=='Clear');
-  const alert=dd.unmatched.length?`<p class="notice">${dd.unmatched.length} repayment${dd.unmatched.length===1?'':'s'} (${money(dd.unmatched.reduce((t,u)=>t+u.a,0))}) ${dd.unmatched.length===1?"isn\u2019t":"aren\u2019t"} linked to a debt, so ${dd.unmatched.length===1?'it isn\u2019t':'they aren\u2019t'} counted.</p>`:'';
+  const clearedCount=dd.list.length-dd.list.filter(e=>e.status==='Pending').length;
+  const alert=dd.unmatched.length?`<p class="notice">${dd.unmatched.length} repayment${dd.unmatched.length===1?'':'s'} (${money(dd.unmatched.reduce((t,u)=>t+u.a,0))}) ${dd.unmatched.length===1?"doesn\u2019t":"don\u2019t"} match a loan name, so ${dd.unmatched.length===1?'it isn\u2019t':'they aren\u2019t'} counted. Check the spelling of ${dd.unmatched.length===1?'the name':'the names'}: ${dd.unmatched.slice(0,3).map(u=>'\u201C'+esc(u.n||'blank')+'\u201D').join(', ')}.</p>`:'';
   return `<dl class="tiles" style="margin-top:14px">
     <div class="tile inc"><dt>Receivable</dt><dd><span class="v">${money(dd.receivable)}</span><small>Others owe you</small></dd></div>
     <div class="tile exp"><dt>Payable</dt><dd><span class="v">${money(dd.payable)}</span><small>You owe others</small></dd></div>
   </dl>${alert}
   <div class="chips" role="group" aria-label="Filter debts">${DEBT_FILTERS.map(([v,l])=>`<button class="chip" data-act="dfilter" data-v="${v}" aria-pressed="${f===v}">${l}</button>`).join('')}</div>
-  ${f!=='clear'&&clearCount?`<p class="hint" style="margin:-4px 0 10px">${clearCount} cleared debt${clearCount===1?'':'s'} ${showClear?'shown':'hidden'}. <button class="btn sm" data-act="toggleclear" style="min-height:34px;padding:0 12px;display:inline-block;width:auto">${showClear?'Hide':'Show'}</button></p>`:''}
+  ${hiding&&clearedCount?`<p class="hint" style="margin:-4px 0 10px">${clearedCount} cleared ${clearedCount===1?'debt is':'debts are'} hidden. <button class="linklike" data-act="dfilter" data-v="clear">Show cleared</button></p>`:''}
   ${list.length?list.map(e=>{
     const pct=e.total>0?Math.min(100,e.returned/e.total*100):0;
     return `<button class="debt" data-act="debt" data-key="${esc(e.key)}">
-      <div class="debt-top"><div><b>${esc(e.name)}</b><small>${e.type==='Money Lent'?'You lent':'You borrowed'} \u00B7 ${esc(fmtDate(e.firstDate))}</small></div><span class="pill ${e.status==='Clear'?'clear':'pending'}">${e.status}</span></div>
+      <div class="debt-top"><div><b>${esc(e.name)}</b><small>${e.type==='Money Lent'?'You lent':'You borrowed'}</small></div><span class="pill ${e.status==='Clear'?'clear':'pending'}">${e.status}</span></div>
       <div class="prog" role="img" aria-label="${Math.round(pct)}% returned"><span style="width:${pct.toFixed(1)}%"></span></div>
       <dl class="nums"><div><dt>Total</dt><dd>${money(e.total)}</dd></div><div><dt>Returned</dt><dd>${money(e.returned)}</dd></div><div><dt>Remaining</dt><dd>${money(e.remaining)}</dd></div></dl>
     </button>`;}).join('')
@@ -584,7 +572,7 @@ function txSheetHTML(sh){
   const kind=sh.kind,isInc=kind==='income',edit=!!sh.id;
   const rec=edit?S.data[kind].find(x=>x.id===sh.id):null;
   if(edit&&!rec)return '<p>This entry no longer exists.</p>';
-  const v=rec?{d:rec.d,c:isInc?rec.s:rec.t,a:rec.a,p:rec.p||'',n:rec.n||''}:Object.assign({d:todayISO(),c:'',a:'',p:'',n:''},sh.prefill||{});
+  const v=rec?{d:rec.d,c:isInc?rec.s:rec.t,a:rec.a,p:rec.p||'',n:rec.n||'',r:rec.r||''}:Object.assign({d:todayISO(),c:'',a:'',p:'',n:'',r:''},sh.prefill||{});
   const cats=(isInc?S.data.lists.sources:S.data.lists.types).slice();
   if(v.c&&!cats.includes(v.c))cats.push(v.c);
   const modes=S.data.lists.modes.slice();
@@ -598,7 +586,8 @@ function txSheetHTML(sh){
       <select id="fCat"><option value="">Choose one</option>${cats.map(c=>`<option${c===v.c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
     <div class="field"><label for="fAmt">Amount (\u20B9)</label><input id="fAmt" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(v.a)}" placeholder="0"></div>
     ${isInc?'':`<div class="field"><label for="fMode">Payment mode</label><select id="fMode"><option value="">Not set</option>${modes.map(c=>`<option${c===v.p?' selected':''}>${esc(c)}</option>`).join('')}</select></div>`}
-    <div class="field" id="fNoteWrap"></div>
+    <div class="field" id="fNoteWrap" data-initial="${esc(v.n)}"></div>
+    <div class="field" id="fRemarkWrap" data-initial="${esc(v.r)}"></div>
     <div id="fErr" role="alert"></div>
     <div class="actions">
       <button class="btn primary" data-act="save">${edit?'Save changes':title}</button>
@@ -606,68 +595,44 @@ function txSheetHTML(sh){
     </div>
   </div>`;
 }
-function noteMode(cat){
-  return (cat==='Debt Return'||cat==='Borrowed Return')?'return':'text';
-}
-// Renders the field that used to be free-typed "Notes". For a new loan
-// (Money Lent / Borrowed) it's still a name you type, since it's a brand
-// new debt. For a repayment (Debt Return / Borrowed Return) it's a picker
-// over the actual open debts, storing the chosen debt's id - no more typing
-// a name that has to match a previous spelling exactly.
-function noteFieldHTML(cat,v,locked){
-  const isCreate=cat==='Money Lent'||cat==='Borrowed';
-  if(noteMode(cat)==='return'){
-    const wantType=cat==='Debt Return'?'Money Lent':'Borrowed';
-    const open=C.debts(S.data).list.filter(e=>e.type===wantType&&(e.status==='Pending'||e.key===v.debtId));
-    if(locked){
-      const e=open.find(x=>x.key===v.debtId);
-      return `<span class="lbl">Debt being repaid</span>
-        <p class="hint" style="margin-top:2px">${e?esc(e.name)+' \u00B7 '+money(e.remaining)+' remaining':'Selected debt'}</p>
-        <input type="hidden" id="fDebtId" value="${esc(v.debtId||'')}">`;
-    }
-    if(!open.length){
-      return `<span class="lbl">${wantType==='Money Lent'?'Receivable':'Payable'} debt</span>
-        <p class="hint" style="margin-top:2px">No open debts of this kind yet. Add one from the Debt tab first.</p>
-        <input type="hidden" id="fDebtId" value="">`;
-    }
-    return `<label for="fDebtSel">Which debt is this for?</label>
-      <select id="fDebtSel">${open.map(e=>`<option value="${esc(e.key)}"${e.key===v.debtId?' selected':''}>${esc(e.name)} \u2014 ${money(e.remaining)} remaining (${esc(fmtDate(e.firstDate))})</option>`).join('')}</select>`;
-  }
-  return `<label for="fNote">${isCreate?'Person\u2019s name':'Notes'}</label>
-    <input id="fNote" type="text" autocomplete="off" value="${esc(v.n||'')}" placeholder="${isCreate?'Name of the person':'Optional'}">
-    <p class="hint">${isCreate?'Each new loan gets its own record, so reusing the same name is fine.':''}</p>`;
-}
 function syncPerson(){
-  const catEl=$('#fCat');if(!catEl)return;
-  const cat=catEl.value,sh=S.ui.sheet||{},wrap=$('#fNoteWrap');
-  const mode=noteMode(cat),prevMode=wrap.dataset.mode||'';
-  if(mode==='text'&&prevMode==='text'){
-    const isCreate=cat==='Money Lent'||cat==='Borrowed';
-    const lbl=$('label[for="fNote"]',wrap);if(lbl)lbl.textContent=isCreate?'Person\u2019s name':'Notes';
-    const inp=$('#fNote',wrap);if(inp)inp.placeholder=isCreate?'Name of the person':'Optional';
-    const hint=$('.hint',wrap);if(hint)hint.textContent=isCreate?'Each new loan gets its own record, so reusing the same name is fine.':'';
-    return;
+  const cat=($('#fCat')||{}).value;if(cat===undefined)return;
+  const wrap=$('#fNoteWrap');if(!wrap)return;
+  const remarkWrap=$('#fRemarkWrap');
+  const existing=wrap.querySelector('#fNote,#fNoteSel');
+  const prev=existing?existing.value:(wrap.dataset.initial||'');
+  const remarkPrev=remarkWrap?((remarkWrap.querySelector('#fRemark')||{}).value||remarkWrap.dataset.initial||''):'';
+  const isReturn=cat==='Debt Return'||cat==='Borrowed Return';
+  const isNewDebt=cat==='Money Lent'||cat==='Borrowed';
+  if(isReturn){
+    const type=cat==='Debt Return'?'Money Lent':'Borrowed';
+    const pending=C.debts(S.data).list.filter(e=>e.type===type&&e.remaining>0);
+    if(pending.length){
+      wrap.innerHTML=`<label for="fNoteSel">Which debt is this repaying?</label>
+      <select id="fNoteSel"><option value="">Choose one</option>${pending.map(e=>`<option value="${esc(e.name)}"${e.name===prev?' selected':''}>${esc(e.name)} \u2014 ${money(e.remaining)} left</option>`).join('')}</select>
+      <p class="hint">Picking from this list, instead of typing the name, is what keeps repayments matched correctly.</p>`;
+    }else{
+      wrap.innerHTML=`<label for="fNote">Person's name</label><input id="fNote" type="text" value="${esc(prev)}" placeholder="Name of the person">
+      <p class="hint">No pending ${type==='Money Lent'?'loan to receive':'amount you borrowed'} is open right now, so this won\u2019t match an existing debt.</p>`;
+    }
+  }else{
+    const names=[];
+    if(isNewDebt)C.debts(S.data).list.forEach(e=>{if(e.type===cat&&!names.includes(e.name))names.push(e.name);});
+    wrap.innerHTML=`<label for="fNote">${isNewDebt?'Person\u2019s name':'Notes'}</label>
+    <input id="fNote" type="text" list="fNames" autocomplete="off" value="${esc(prev)}" placeholder="${isNewDebt?'Name of the person':'Optional'}">
+    <datalist id="fNames">${names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+    ${isNewDebt?'<p class="hint">New debts are still typed, so spell the name the same way if you’ve used it before — or better, reuse a name shown above.</p>':''}`;
   }
-  let curDebtId='',curNote='';
-  if(sh.id){
-    const rec=S.data[sh.kind].find(x=>x.id===sh.id);
-    if(rec){curDebtId=rec.debtId||'';curNote=rec.n||'';}
-  }else if(sh.prefill){
-    curDebtId=sh.prefill.debtId||'';curNote=sh.prefill.n||'';
+  if(remarkWrap){
+    const debtMode=cat==='Money Lent'||cat==='Borrowed'||cat==='Debt Return'||cat==='Borrowed Return';
+    remarkWrap.innerHTML=debtMode
+      ? `<label for="fRemark">Remarks</label><input id="fRemark" type="text" value="${esc(remarkPrev)}" placeholder="Optional" maxlength="120">`
+      : '';
   }
-  wrap.innerHTML=noteFieldHTML(cat,{n:curNote,debtId:curDebtId},!!sh.lock);
-  wrap.dataset.mode=mode;
 }
 function readForm(){
-  const cat=$('#fCat').value;
-  let n='',debtId='';
-  if(noteMode(cat)==='return'){
-    debtId=$('#fDebtId')?$('#fDebtId').value:($('#fDebtSel')?$('#fDebtSel').value:'');
-    const e=debtByKey(debtId);n=e?e.name:'';
-  }else{
-    n=$('#fNote')?$('#fNote').value:'';
-  }
-  return {d:$('#fDate').value,c:cat,a:$('#fAmt').value,p:$('#fMode')?$('#fMode').value:'',n,debtId};
+  const noteEl=$('#fNoteSel')||$('#fNote');
+  return {d:$('#fDate').value,c:$('#fCat').value,a:$('#fAmt').value,p:$('#fMode')?$('#fMode').value:'',n:noteEl?noteEl.value:'',r:($('#fRemark')||{}).value||''};
 }
 function debtSheetHTML(sh){
   const e=C.debts(S.data).list.find(x=>x.key===sh.key);
@@ -678,10 +643,11 @@ function debtSheetHTML(sh){
   return `<div class="sheet-head"><div><h2 id="sheetTitle">${esc(e.name)}</h2><p class="muted">${lent?'You lent':'You borrowed'}</p></div><button class="icon-btn" data-act="close" aria-label="Close">${I.close}</button></div>
   <dl class="tiles" style="margin-top:0"><div class="tile"><dt>Total</dt><dd><span class="v">${money(e.total)}</span></dd></div><div class="tile inc"><dt>Returned</dt><dd><span class="v">${money(e.returned)}</span></dd></div><div class="tile ${e.remaining?'exp':''}"><dt>Remaining</dt><dd><span class="v">${money(e.remaining)}</span></dd></div></dl>
   <h3 class="sec">History</h3>
-  ${ev.map(x=>`<button class="row" data-act="edit" data-kind="${x.list}" data-id="${esc(x.id)}"><b>${x.label}</b><span class="amt">${money(x.a)}</span><small>${esc(fmtDate(x.d))}</small></button>`).join('')}
+  ${ev.map(x=>`<button class="row" data-act="edit" data-kind="${x.list}" data-id="${esc(x.id)}"><b>${x.label}${x.r?`<span class="tag">${esc(x.r)}</span>`:''}</b><span class="amt">${money(x.a)}</span><small>${esc(fmtDate(x.d))}</small></button>`).join('')}
   <div class="actions" style="margin-top:14px">
     ${e.remaining>0?`<button class="btn primary" data-act="repay" data-key="${esc(e.key)}">Record repayment</button>`:''}
     <button class="btn" data-act="more" data-key="${esc(e.key)}">${lent?'Lend more':'Borrow more'}</button>
+    <button class="btn" data-act="downloadDebt" data-key="${esc(e.key)}">Download</button>
   </div>`;
 }
 function newDebtHTML(){
@@ -702,6 +668,12 @@ function settingsHTML(){
   return `<div class="sheet-head"><h2 id="sheetTitle">Settings</h2><button class="icon-btn" data-act="close" aria-label="Close">${I.close}</button></div>
   <h3 class="sec">Appearance</h3>
   <div class="seg" role="group" aria-label="Appearance">${['system','light','dark'].map(t=>`<button data-act="theme" data-v="${t}" aria-pressed="${theme===t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join('')}</div>
+  <h3 class="sec">Debt list</h3>
+  <p class="hint" style="margin-bottom:10px">Cleared debts stay in your records (so past months still add up correctly) but can be tucked out of the way.</p>
+  <div class="seg" role="group" aria-label="Cleared debts" style="margin-bottom:4px">
+    <button data-act="hidecleared" data-v="0" aria-pressed="${!S.data.prefs.hideCleared}">Show cleared</button>
+    <button data-act="hidecleared" data-v="1" aria-pressed="${!!S.data.prefs.hideCleared}">Hide cleared</button>
+  </div>
   <h3 class="sec">Targets for the yearly table</h3>
   <p class="hint" style="margin-bottom:10px">These decide the green and red cells.</p>
   <div class="two">${tf('incomeHigh','Income is good from')}${tf('incomeLow','Income is low up to')}${tf('expenseLimit','Expense limit')}${tf('savingsGoal','Savings goal')}${tf('freelanceGoal','Freelance goal')}</div>
@@ -735,8 +707,7 @@ function renderSheet(fresh){
       const cat=$('#fCat').value;
       if(sh.id)first=$('#fAmt');
       else if(!cat)first=$('#fCat');
-      else if(noteMode(cat)==='return')first=$('#fDebtSel')||$('#fAmt');
-      else if((cat==='Money Lent'||cat==='Borrowed')&&$('#fNote')&&!$('#fNote').value)first=$('#fNote');
+      else if(DEBT_CATS.has(cat)){const el=$('#fNoteSel')||$('#fNote');if(el&&!el.value)first=el;}
       else first=$('#fAmt');
     }
     if(!first)first=sheet.querySelector('button');
@@ -765,27 +736,172 @@ function saveTx(){
   const sh=S.ui.sheet,kind=sh.kind,isInc=kind==='income',f=readForm();
   const fail=m=>{$('#fErr').innerHTML=`<p class="err">${esc(m)}</p>`;};
   const amt=parseFloat(f.a);
-  const isDebtCreate=f.c==='Money Lent'||f.c==='Borrowed';
-  const isDebtReturn=f.c==='Debt Return'||f.c==='Borrowed Return';
   if(!isDate(f.d))return fail('Pick a date.');
   if(!f.c)return fail(isInc?'Choose a source.':'Choose an expense type.');
   if(!(amt>0))return fail('Enter an amount greater than zero.');
-  if(isDebtCreate&&!f.n.trim())return fail('Enter the person\u2019s name so the debt can be tracked.');
-  if(isDebtReturn&&!f.debtId)return fail('Choose which debt this repayment is for.');
+  if(DEBT_CATS.has(f.c)&&!f.n.trim())return fail((f.c==='Debt Return'||f.c==='Borrowed Return')?'Choose which debt this is repaying.':'Enter the person\u2019s name so the debt can be tracked.');
   let rec=sh.id?S.data[kind].find(x=>x.id===sh.id):null;
   const isNew=!rec;
   if(isNew){rec={id:uid()};}
-  rec.d=f.d;rec.a=r2(amt);rec.n=f.n.trim();
+  rec.d=f.d;rec.a=r2(amt);rec.n=f.n.trim();rec.r=f.r.trim();
   if(isInc)rec.s=f.c;else{rec.t=f.c;rec.p=f.p||null;}
-  if(isDebtCreate&&!rec.debtId)rec.debtId=uid();
-  else if(isDebtReturn)rec.debtId=f.debtId;
-  else rec.debtId='';
   if(isNew)S.data[kind].push(rec);
   saveData();
   if(!badDate(f.d)){S.ui.m=mOf(f.d);S.ui.y=yOf(f.d);}
   const msg=(isNew?'Added to ':'Saved in ')+MONTHS[mOf(f.d)]+' '+yOf(f.d);
   S.ui.sheet=null;S.ui.lastFocus=null;renderSheet();render();toast(badDate(f.d)?'Saved. Check the date, it looks unusual.':msg);
 }
+/* ---------- debt PDF ---------- */
+let debtPdfTemplatePromise=null;
+function loadDebtPdfTemplate(){
+  if(!debtPdfTemplatePromise){
+    debtPdfTemplatePromise=fetch('/debt-template.jpg',{cache:'force-cache'})
+      .then(r=>{if(!r.ok)throw new Error('Debt PDF template could not be loaded.');return r.blob();})
+      .then(blob=>new Promise((resolve,reject)=>{
+        const img=new Image();
+        img.onload=()=>resolve(img);
+        img.onerror=()=>reject(new Error('Debt PDF template could not be decoded.'));
+        img.src=URL.createObjectURL(blob);
+      }));
+  }
+  return debtPdfTemplatePromise;
+}
+function pdfAsciiText(s){
+  return String(s==null?'':s).replace(/[^\x20-\x7E]/g,'?');
+}
+function pdfByteString(s){
+  const t=pdfAsciiText(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
+  return '('+t+')';
+}
+function bytesFromBase64(b64){
+  const bin=atob(b64),out=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);
+  return out;
+}
+function concatBytes(parts){
+  let n=0;parts.forEach(p=>n+=p.length);
+  const out=new Uint8Array(n);let o=0;
+  parts.forEach(p=>{out.set(p,o);o+=p.length;});
+  return out;
+}
+function asciiBytes(s){return new TextEncoder().encode(s);}
+function makeJpegPdf(jpegDataUrls){
+  const objects=[];
+  const pageRefs=[],contentRefs=[],imageRefs=[];
+  // 1: Catalog, 2: Pages, then 3/4/5... page/image/content triplets.
+  objects[1]=asciiBytes('<< /Type /Catalog /Pages 2 0 R >>');
+  objects[2]=null;
+  let obj=3;
+  jpegDataUrls.forEach(()=>{
+    pageRefs.push(obj); contentRefs.push(obj+1); imageRefs.push(obj+2); obj+=3;
+  });
+  const kids=pageRefs.map(n=>n+' 0 R').join(' ');
+  objects[2]=asciiBytes(`<< /Type /Pages /Kids [${kids}] /Count ${pageRefs.length} >>`);
+  for(let i=0;i<jpegDataUrls.length;i++){
+    const jpg=bytesFromBase64(jpegDataUrls[i].split(',')[1]);
+    const imgW=1241,imgH=1755;
+    const pageNo=pageRefs[i],contentNo=contentRefs[i],imageNo=imageRefs[i];
+    const content=`q
+595.5 0 0 842.25 0 0 cm
+/Im0 Do
+Q`;
+    objects[pageNo]=asciiBytes(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.5 842.25] /Resources << /ProcSet [/PDF /ImageC] /XObject << /Im0 ${imageNo} 0 R >> >> /Contents ${contentNo} 0 R >>`);
+    const cb=asciiBytes(content);
+    objects[contentNo]=concatBytes([asciiBytes(`<< /Length ${cb.length} >>\nstream\n`),cb,asciiBytes('\nendstream')]);
+    objects[imageNo]=concatBytes([asciiBytes(`<< /Type /XObject /Subtype /Image /Width ${imgW} /Height ${imgH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`),jpg,asciiBytes('\nendstream')]);
+  }
+  const chunks=[asciiBytes('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n')];
+  const offsets=new Array(objects.length).fill(0);
+  let pos=chunks[0].length;
+  for(let n=1;n<objects.length;n++){
+    const head=asciiBytes(`${n} 0 obj\n`),tail=asciiBytes('\nendobj\n');
+    offsets[n]=pos;chunks.push(head,objects[n],tail);pos+=head.length+objects[n].length+tail.length;
+  }
+  const xrefPos=pos;
+  let xref=`xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for(let n=1;n<objects.length;n++)xref+=String(offsets[n]).padStart(10,'0')+' 00000 n \n';
+  xref+=`trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
+  chunks.push(asciiBytes(xref));
+  return new Blob(chunks,{type:'application/pdf'});
+}
+function debtGeneratedStamp(){
+  const d=new Date(),dd=pad(d.getDate()),mm=pad(d.getMonth()+1),yyyy=d.getFullYear();
+  let h=d.getHours();const ap=h>=12?'pm':'am';h=h%12||12;
+  return `Generated: ${dd}/${mm}/${yyyy}, ${h}:${pad(d.getMinutes())} ${ap}`;
+}
+function drawFitText(ctx,text,x,y,maxWidth,font){
+  ctx.font=font;
+  let t=String(text==null?'':text);
+  if(ctx.measureText(t).width<=maxWidth){ctx.fillText(t,x,y);return;}
+  while(t.length>1&&ctx.measureText(t+'…').width>maxWidth)t=t.slice(0,-1);
+  ctx.fillText(t+'…',x,y);
+}
+async function downloadDebtPdf(key){
+  const e=C.debts(S.data).list.find(x=>x.key===key);
+  if(!e){toast('This debt no longer exists.');return;}
+  toast('Preparing PDF…');
+  try{
+    const img=await loadDebtPdfTemplate();
+    const events=e.loans.map(l=>({d:l.d,a:l.a,remark:l.r||((e.type==='Money Lent')?'Lent':'Borrowed'),id:l.id}))
+      .concat(e.returns.map(r=>({d:r.d,a:r.a,remark:r.r||'Repaid',id:r.id})))
+      .sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);
+
+    const pageSize={w:1241,h:1755};
+    const rowsPerPage=19;
+    const pages=[];
+    for(let start=0;start<events.length||start===0;start+=rowsPerPage){
+      const pageEvents=events.slice(start,start+rowsPerPage);
+      const c=document.createElement('canvas');
+      c.width=pageSize.w;c.height=pageSize.h;
+      const ctx=c.getContext('2d');
+      ctx.drawImage(img,0,0,pageSize.w,pageSize.h);
+      ctx.fillStyle='#5A5A5A';
+      ctx.textBaseline='top';
+      const baseFont='500 16px Figtree, Arial, sans-serif';
+      const smallFont='500 14px Figtree, Arial, sans-serif';
+      // Cover the template's printed "Generated" timestamp, then write the current one.
+      ctx.fillStyle='#FFFFFF';
+      ctx.fillRect(755,1518,400,42);
+      ctx.fillStyle='#737373';
+      ctx.font='500 13px Figtree, Arial, sans-serif';
+      ctx.fillText(debtGeneratedStamp(),802,1530);
+
+      ctx.fillStyle='#5A5A5A';
+      drawFitText(ctx,e.name,205,369,270,baseFont);
+      drawFitText(ctx,money(e.total),225,421,250,baseFont);
+      drawFitText(ctx,fmtDate(e.firstDate),840,369,210,baseFont);
+      drawFitText(ctx,money(e.remaining),840,421,210,baseFont);
+
+      pageEvents.forEach((x,i)=>{
+        const y=553+i*48;
+        ctx.fillStyle='#5A5A5A';
+        drawFitText(ctx,fmtDate(x.d),103,y,220,smallFont);
+        drawFitText(ctx,money(x.a),374,y,235,smallFont);
+        drawFitText(ctx,x.remark,750,y,180,smallFont);
+      });
+      // If this is a continuation page, identify the page in the footer without changing the template layout.
+      if(start>0){
+        ctx.fillStyle='#FFFFFF';ctx.fillRect(755,1518,400,42);
+        ctx.fillStyle='#737373';ctx.font='500 13px Figtree, Arial, sans-serif';
+        ctx.fillText(`${debtGeneratedStamp()}  •  Page ${Math.floor(start/rowsPerPage)+1}`,802,1530);
+      }
+      pages.push(c.toDataURL('image/jpeg',0.92));
+      if(events.length<=rowsPerPage)break;
+    }
+    const pdf=makeJpegPdf(pages);
+    saveBlobFile(`${e.name.replace(/[^\w\u00C0-\uFFFF-]+/g,'-')}-debt-track.pdf`,pdf);
+  }catch(err){
+    console.error(err);
+    toast('Could not create the PDF. Please try again.');
+  }
+}
+function saveBlobFile(name,blob){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  toast('Downloaded '+name);
+}
+
 function doExport(what){
   const D=S.data,q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
   let name,text;
@@ -835,7 +951,6 @@ document.addEventListener('click',ev=>{
     case 'next':shiftPeriod(1);break;
     case 'scope':S.ui.scope[S.ui.tab]=d.v;render();break;
     case 'dfilter':S.ui.debtFilter=d.v;render();break;
-    case 'toggleclear':S.ui.debtShowClear=!S.ui.debtShowClear;render();break;
     case 'add':openSheet({type:'tx',kind:d.kind||'expenses',id:null,prefill:{}});break;
     case 'edit':openSheet({type:'tx',kind:d.kind,id:d.id});break;
     case 'kind':{const p=readForm();S.ui.sheet={type:'tx',kind:d.kind,id:null,prefill:{d:p.d,a:p.a,n:p.n}};renderSheet(true);break;}
@@ -849,10 +964,12 @@ document.addEventListener('click',ev=>{
     case 'newborrowed':S.ui.sheet={type:'tx',kind:'income',id:null,lock:true,prefill:{c:'Borrowed'}};renderSheet(true);break;
     case 'debt':openSheet({type:'debt',key:d.key});break;
     case 'repay':{const e=debtByKey(d.key);if(!e)break;const lent=e.type==='Money Lent';
-      S.ui.sheet={type:'tx',kind:lent?'income':'expenses',id:null,lock:true,prefill:{c:lent?'Debt Return':'Borrowed Return',n:e.name,a:e.remaining,debtId:e.key}};renderSheet(true);break;}
+      S.ui.sheet={type:'tx',kind:lent?'income':'expenses',id:null,lock:true,prefill:{c:lent?'Debt Return':'Borrowed Return',n:e.name,a:e.remaining}};renderSheet(true);break;}
     case 'more':{const e=debtByKey(d.key);if(!e)break;const lent=e.type==='Money Lent';
       S.ui.sheet={type:'tx',kind:lent?'expenses':'income',id:null,lock:true,prefill:{c:lent?'Money Lent':'Borrowed',n:e.name}};renderSheet(true);break;}
+    case 'downloadDebt':downloadDebtPdf(d.key);break;
     case 'theme':setTheme(d.v);renderSheet();break;
+    case 'hidecleared':S.data.prefs.hideCleared=d.v==='1';saveData();renderSheet();render();break;
     case 'addcat':{
       const inp=$('#new-'+d.list),name=inp.value.trim();
       if(!name){inp.focus();break;}
@@ -877,6 +994,7 @@ document.addEventListener('click',ev=>{
 });
 document.addEventListener('change',ev=>{
   const t=ev.target;
+  const fe0=$('#fErr');if(fe0&&fe0.innerHTML&&t.closest&&t.closest('#txBody'))fe0.innerHTML='';
   if(t.id==='mSel'){S.ui.m=+t.value;render();}
   else if(t.id==='ySel'){S.ui.y=+t.value;render();}
   else if(t.id==='fCat'){syncPerson();const fe=$('#fErr');if(fe)fe.innerHTML='';}
