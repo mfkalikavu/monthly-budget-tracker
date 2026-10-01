@@ -752,20 +752,6 @@ function saveTx(){
   S.ui.sheet=null;S.ui.lastFocus=null;renderSheet();render();toast(badDate(f.d)?'Saved. Check the date, it looks unusual.':msg);
 }
 /* ---------- debt PDF ---------- */
-let debtPdfTemplatePromise=null;
-function loadDebtPdfTemplate(){
-  if(!debtPdfTemplatePromise){
-    debtPdfTemplatePromise=fetch('/debt-template.jpg',{cache:'force-cache'})
-      .then(r=>{if(!r.ok)throw new Error('Debt PDF template could not be loaded.');return r.blob();})
-      .then(blob=>new Promise((resolve,reject)=>{
-        const img=new Image();
-        img.onload=()=>resolve(img);
-        img.onerror=()=>reject(new Error('Debt PDF template could not be decoded.'));
-        img.src=URL.createObjectURL(blob);
-      }));
-  }
-  return debtPdfTemplatePromise;
-}
 function pdfAsciiText(s){
   return String(s==null?'':s).replace(/[^\x20-\x7E]/g,'?');
 }
@@ -788,7 +774,6 @@ function asciiBytes(s){return new TextEncoder().encode(s);}
 function makeJpegPdf(jpegDataUrls){
   const objects=[];
   const pageRefs=[],contentRefs=[],imageRefs=[];
-  // 1: Catalog, 2: Pages, then 3/4/5... page/image/content triplets.
   objects[1]=asciiBytes('<< /Type /Catalog /Pages 2 0 R >>');
   objects[2]=null;
   let obj=3;
@@ -799,13 +784,10 @@ function makeJpegPdf(jpegDataUrls){
   objects[2]=asciiBytes(`<< /Type /Pages /Kids [${kids}] /Count ${pageRefs.length} >>`);
   for(let i=0;i<jpegDataUrls.length;i++){
     const jpg=bytesFromBase64(jpegDataUrls[i].split(',')[1]);
-    const imgW=1241,imgH=1755;
+    const imgW=1240,imgH=1754;
     const pageNo=pageRefs[i],contentNo=contentRefs[i],imageNo=imageRefs[i];
-    const content=`q
-595.5 0 0 842.25 0 0 cm
-/Im0 Do
-Q`;
-    objects[pageNo]=asciiBytes(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.5 842.25] /Resources << /ProcSet [/PDF /ImageC] /XObject << /Im0 ${imageNo} 0 R >> >> /Contents ${contentNo} 0 R >>`);
+    const content=`q\n595.2 0 0 841.92 0 0 cm\n/Im0 Do\nQ`;
+    objects[pageNo]=asciiBytes(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.2 841.92] /Resources << /ProcSet [/PDF /ImageC] /XObject << /Im0 ${imageNo} 0 R >> >> /Contents ${contentNo} 0 R >>`);
     const cb=asciiBytes(content);
     objects[contentNo]=concatBytes([asciiBytes(`<< /Length ${cb.length} >>\nstream\n`),cb,asciiBytes('\nendstream')]);
     objects[imageNo]=concatBytes([asciiBytes(`<< /Type /XObject /Subtype /Image /Width ${imgW} /Height ${imgH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`),jpg,asciiBytes('\nendstream')]);
@@ -829,63 +811,117 @@ function debtGeneratedStamp(){
   let h=d.getHours();const ap=h>=12?'pm':'am';h=h%12||12;
   return `Generated: ${dd}/${mm}/${yyyy}, ${h}:${pad(d.getMinutes())} ${ap}`;
 }
-function drawFitText(ctx,text,x,y,maxWidth,font){
-  ctx.font=font;
-  let t=String(text==null?'':text);
-  if(ctx.measureText(t).width<=maxWidth){ctx.fillText(t,x,y);return;}
-  while(t.length>1&&ctx.measureText(t+'…').width>maxWidth)t=t.slice(0,-1);
-  ctx.fillText(t+'…',x,y);
+function pdfWrapLines(ctx,text,maxWidth){
+  const words=String(text==null?'':text).trim().split(/\s+/).filter(Boolean);
+  if(!words.length)return [''];
+  const lines=[];let line='';
+  for(const word of words){
+    const test=line?line+' '+word:word;
+    if(ctx.measureText(test).width<=maxWidth){line=test;continue;}
+    if(line)lines.push(line);
+    if(ctx.measureText(word).width<=maxWidth){line=word;continue;}
+    let part='';
+    for(const ch of word){
+      const t=part+ch;
+      if(ctx.measureText(t).width>maxWidth&&part){lines.push(part);part=ch;}else part=t;
+    }
+    line=part;
+  }
+  if(line)lines.push(line);
+  return lines.length?lines:[''];
+}
+function pdfFitText(ctx,text,x,y,maxWidth,font,maxSize){
+  let size=maxSize;
+  const family='Figtree, Arial, sans-serif';
+  while(size>12){
+    ctx.font=font.replace(/\d+(?:\.\d+)?px/,size+'px');
+    if(ctx.measureText(String(text==null?'':text)).width<=maxWidth)break;
+    size-=1;
+  }
+  ctx.fillText(String(text==null?'':text),x,y);
 }
 async function downloadDebtPdf(key){
   const e=C.debts(S.data).list.find(x=>x.key===key);
   if(!e){toast('This debt no longer exists.');return;}
   toast('Preparing PDF…');
   try{
-    const img=await loadDebtPdfTemplate();
-    const events=e.loans.map(l=>({d:l.d,a:l.a,remark:l.r||((e.type==='Money Lent')?'Lent':'Borrowed'),id:l.id}))
-      .concat(e.returns.map(r=>({d:r.d,a:r.a,remark:r.r||'Repaid',id:r.id})))
+    const events=e.loans.map(l=>({d:l.d,a:l.a,remark:l.r||'',kind:e.type==='Money Lent'?'Lent':'Borrowed',id:l.id}))
+      .concat(e.returns.map(r=>({d:r.d,a:r.a,remark:r.r||'',kind:'Repaid',id:r.id})))
       .sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);
 
-    const pageSize={w:1241,h:1755};
-    const rowsPerPage=19;
+    // Clean A4-style portrait canvas. The supplied PDF is used only as a structural reference;
+    // this report is intentionally redesigned for readability on phones, screens and paper.
+    const W=1240,H=1754;
+    const rowsPerPage=15;
     const pages=[];
+    const lent=e.type==='Money Lent';
+    const typeLabel=lent?'MONEY LENT':'BORROWED';
+    const dateLabel=lent?'DATE LENT':'DATE BORROWED';
+    const navy='#17324D', navy2='#244A68', teal='#187A72', tealSoft='#E8F3F1';
+    const ink='#1D2935', muted='#667482', line='#DCE3E8', soft='#F5F7F8', white='#FFFFFF';
+
     for(let start=0;start<events.length||start===0;start+=rowsPerPage){
       const pageEvents=events.slice(start,start+rowsPerPage);
-      const c=document.createElement('canvas');
-      c.width=pageSize.w;c.height=pageSize.h;
+      const c=document.createElement('canvas');c.width=W;c.height=H;
       const ctx=c.getContext('2d');
-      ctx.drawImage(img,0,0,pageSize.w,pageSize.h);
-      ctx.fillStyle='#5A5A5A';
-      ctx.textBaseline='top';
-      const baseFont='500 16px Figtree, Arial, sans-serif';
-      const smallFont='500 14px Figtree, Arial, sans-serif';
-      // Cover the template's printed "Generated" timestamp, then write the current one.
-      ctx.fillStyle='#FFFFFF';
-      ctx.fillRect(755,1518,400,42);
-      ctx.fillStyle='#737373';
-      ctx.font='500 13px Figtree, Arial, sans-serif';
-      ctx.fillText(debtGeneratedStamp(),802,1530);
+      ctx.fillStyle=white;ctx.fillRect(0,0,W,H);
 
-      ctx.fillStyle='#5A5A5A';
-      drawFitText(ctx,e.name,205,369,270,baseFont);
-      drawFitText(ctx,money(e.total),225,421,250,baseFont);
-      drawFitText(ctx,fmtDate(e.firstDate),840,369,210,baseFont);
-      drawFitText(ctx,money(e.remaining),840,421,210,baseFont);
+      // Header
+      ctx.fillStyle=navy;ctx.fillRect(0,0,W,250);
+      ctx.fillStyle=white;ctx.font='700 52px Bricolage Grotesque, Arial, sans-serif';ctx.fillText('DEBT TRACK',72,78);
+      ctx.fillStyle='#C8D7E3';ctx.font='600 22px Figtree, Arial, sans-serif';ctx.fillText('PERSONAL TRANSACTION STATEMENT',74,116);
+      ctx.fillStyle='#8FE0D7';ctx.font='700 20px Figtree, Arial, sans-serif';ctx.fillText(typeLabel,74,176);
+      ctx.fillStyle='#DDE8EF';ctx.font='500 18px Figtree, Arial, sans-serif';ctx.fillText(debtGeneratedStamp(),W-360,176);
 
-      pageEvents.forEach((x,i)=>{
-        const y=553+i*48;
-        ctx.fillStyle='#5A5A5A';
-        drawFitText(ctx,fmtDate(x.d),103,y,220,smallFont);
-        drawFitText(ctx,money(x.a),374,y,235,smallFont);
-        drawFitText(ctx,x.remark,750,y,180,smallFont);
+      // Person identity block
+      ctx.fillStyle=white;ctx.strokeStyle=line;ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(60,282,W-120,170,20);ctx.fill();ctx.stroke();
+      ctx.fillStyle=ink;ctx.font='700 38px Bricolage Grotesque, Arial, sans-serif';
+      pdfFitText(ctx,e.name,92,338,500,'700 38px Bricolage Grotesque, Arial, sans-serif',38);
+      ctx.fillStyle=muted;ctx.font='600 18px Figtree, Arial, sans-serif';ctx.fillText('DEBT HOLDER / PERSON',94,374);
+      ctx.fillStyle=tealSoft;ctx.beginPath();ctx.roundRect(760,308,190,50,25);ctx.fill();
+      ctx.fillStyle=teal;ctx.font='700 19px Figtree, Arial, sans-serif';ctx.textAlign='center';ctx.fillText(e.status.toUpperCase(),855,340);ctx.textAlign='left';
+      ctx.fillStyle=muted;ctx.font='600 16px Figtree, Arial, sans-serif';ctx.fillText(dateLabel,982,327);
+      ctx.fillStyle=ink;ctx.font='600 22px Figtree, Arial, sans-serif';ctx.fillText(fmtDate(e.firstDate),982,358);
+
+      // Summary cards
+      const cards=[['TOTAL',money(e.total)],['REPAID',money(e.returned)],['BALANCE',money(e.remaining)]];
+      cards.forEach((card,i)=>{
+        const x=60+i*373;ctx.fillStyle=soft;ctx.beginPath();ctx.roundRect(x,480,350,130,18);ctx.fill();
+        ctx.fillStyle=muted;ctx.font='700 17px Figtree, Arial, sans-serif';ctx.fillText(card[0],x+24,516);
+        ctx.fillStyle=i===2&&e.remaining>0?navy:ink;ctx.font='700 31px Bricolage Grotesque, Arial, sans-serif';ctx.fillText(card[1],x+24,568);
       });
-      // If this is a continuation page, identify the page in the footer without changing the template layout.
-      if(start>0){
-        ctx.fillStyle='#FFFFFF';ctx.fillRect(755,1518,400,42);
-        ctx.fillStyle='#737373';ctx.font='500 13px Figtree, Arial, sans-serif';
-        ctx.fillText(`${debtGeneratedStamp()}  •  Page ${Math.floor(start/rowsPerPage)+1}`,802,1530);
+
+      // Table heading
+      ctx.fillStyle=navy;ctx.beginPath();ctx.roundRect(60,650,W-120,62,14);ctx.fill();
+      ctx.fillStyle=white;ctx.font='700 18px Figtree, Arial, sans-serif';ctx.fillText('DATE',88,688);ctx.fillText('PAYMENT',390,688);ctx.fillText('REMARK',720,688);
+
+      // Table rows with generous typography and spacing
+      const rowH=62, firstY=712;
+      pageEvents.forEach((x,i)=>{
+        const y=firstY+i*rowH;
+        ctx.fillStyle=i%2===0?white:'#FAFBFC';ctx.fillRect(60,y,W-120,rowH);
+        ctx.strokeStyle=line;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(60,y+rowH);ctx.lineTo(W-60,y+rowH);ctx.stroke();
+        ctx.fillStyle=ink;ctx.font='600 20px Figtree, Arial, sans-serif';ctx.fillText(fmtDate(x.d),88,y+39);
+        ctx.fillStyle=x.kind==='Repaid'?teal:navy2;ctx.font='700 21px Figtree, Arial, sans-serif';ctx.fillText(money(x.a),390,y+39);
+        ctx.fillStyle=muted;ctx.font='500 19px Figtree, Arial, sans-serif';
+        const remarkLines=pdfWrapLines(ctx,x.remark,430);
+        ctx.fillText(remarkLines[0]||'',720,y+31);
+        if(remarkLines[1])ctx.fillText(remarkLines[1],720,y+52);
+      });
+
+      // Empty state for a defensive edge case
+      if(!events.length){
+        ctx.fillStyle=muted;ctx.font='500 20px Figtree, Arial, sans-serif';ctx.fillText('No transactions recorded.',88,770);
       }
-      pages.push(c.toDataURL('image/jpeg',0.92));
+
+      // Footer
+      const footerY=1690;
+      ctx.strokeStyle=line;ctx.beginPath();ctx.moveTo(60,footerY-24);ctx.lineTo(W-60,footerY-24);ctx.stroke();
+      ctx.fillStyle=muted;ctx.font='500 16px Figtree, Arial, sans-serif';
+      ctx.fillText('This statement is generated from the debt records in the Budget app.',60,footerY+8);
+      ctx.textAlign='right';ctx.fillText(`Page ${Math.floor(start/rowsPerPage)+1}`,W-60,footerY+8);ctx.textAlign='left';
+
+      pages.push(c.toDataURL('image/jpeg',0.94));
       if(events.length<=rowsPerPage)break;
     }
     const pdf=makeJpegPdf(pages);
