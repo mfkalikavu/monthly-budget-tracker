@@ -77,9 +77,10 @@ textarea{min-height:110px;font-size:.85rem}
 .tile dt{font-size:.85rem;font-weight:600;color:var(--muted)}
 .tile dd{font:700 1.2rem 'Bricolage Grotesque','Figtree',sans-serif;margin-top:4px;overflow-wrap:anywhere}
 .tile small{display:block;color:var(--muted);font-size:.78rem;margin-top:2px;line-height:1.3}
-.tile.inc dd{color:var(--inc)}.tile.exp dd{color:var(--exp)}.tile.sav dd{color:#6D4CC3}
+.tile.sav{--tile-ink:#6D4CC3;--tile-bg:#EEE8FF}
+.tile.inc dd{color:var(--inc)}.tile.exp dd{color:var(--exp)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px;margin:12px 0}
-.card h2{font-size:1.1rem;margin-bottom:2px}.report-action{display:flex;align-items:center;justify-content:space-between;gap:12px}.report-action .btn{flex:none}
+.card h2{font-size:1.1rem;margin-bottom:2px}
 .muted{color:var(--muted)}
 .small{font-size:.88rem}
 .donut-wrap{display:flex;gap:16px;align-items:flex-start;margin-top:14px;flex-wrap:wrap}
@@ -178,6 +179,9 @@ td.nil{color:var(--muted)}
 .toast.show{opacity:1}
 details summary{cursor:pointer;font-weight:600;min-height:40px;display:flex;align-items:center}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.tile.sav .v{color:#6D4CC3}
+.dashboard-download{display:flex;justify-content:center;margin:18px 0 8px}
+.dashboard-download .btn{width:100%;max-width:420px;min-height:48px}
 </style>
 </head>
 <body>
@@ -414,7 +418,6 @@ function vDash(){
   const firstRun=!D.income.length&&!D.expenses.length;
   return `${periodBar(true)}
   ${firstRun?`<section class="card"><h2>Welcome</h2><p class="muted small">Add your first entry, or restore a backup file you saved earlier.</p><div class="two" style="margin-top:12px"><button class="btn primary sm" data-act="add" data-kind="expenses">Add an entry</button><button class="btn sm" data-act="settings">Restore backup</button></div></section>`:''}
-  <section class="card report-action"><div><h2>Monthly report</h2><p class="muted small">Download income, expenses and category details for ${esc(periodLabel())}.</p></div><button class="btn primary sm" data-act="downloadMonthly">${I.down||'↓'} Download PDF</button></section>
   <section class="hero" aria-label="Balance for ${esc(periodLabel())}">
     <p class="hero-label">Balance</p>
     <p class="hero-num ${bal>=0?'pos':'neg'}">${money(bal)}</p>
@@ -435,7 +438,8 @@ function vDash(){
     <p class="muted small">${esc(periodLabel())}</p>
     ${cats.length?`<div class="donut-wrap">${donut(cats)}<ul class="legend">${cats.map((c,i)=>{const p=c.value/catTotal*100;return `<li><span class="dot" style="background:${PALETTE[i%PALETTE.length]}"></span><span>${esc(c.name)}<span class="pct">${p<1?'<1':Math.round(p)}%</span></span><b>${money(c.value)}</b></li>`;}).join('')}</ul></div>`
     :`<div class="empty"><p>No spending recorded for ${esc(periodLabel())}.</p><button class="btn sm" data-act="add" data-kind="expenses">Add an expense</button></div>`}
-  </section>`;
+  </section>
+  <div class="dashboard-download"><button class="btn primary" data-act="downloadMonthlyPdf">${I.download||"⇩"} Download monthly report (PDF)</button></div>`;
 }
 
 function listRows(kind){
@@ -938,60 +942,35 @@ async function downloadDebtPdf(key){
     toast('Could not create the PDF. Please try again.');
   }
 }
-async function downloadMonthlyPdf(){
-  const D=S.data,m=S.ui.m,year=S.ui.y,label=periodLabel();
-  const incomes=D.income.filter(x=>inP(x.d,m,year)).sort((a,b)=>a.d.localeCompare(b.d));
-  const expenses=D.expenses.filter(x=>inP(x.d,m,year)).sort((a,b)=>a.d.localeCompare(b.d));
-  const inc=C.income(D,m,year), exp=C.expense(D,m,year), bal=r2(inc-exp), cats=C.categories(D,m,year);
-  const generated=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
-  const W=1240,H=1754, margin=76, rowH=47;
-  const pages=[];
-  const moneyText=n=>money(n);
-  function pageBase(pageNo){
-    const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
-    x.fillStyle='#F5F7F8';x.fillRect(0,0,W,H);
-    x.fillStyle='#182B3A';x.fillRect(0,0,W,230);
-    x.fillStyle='#A9C8D7';x.font='600 24px Arial';x.fillText('PERSONAL FINANCE • MONTHLY SUMMARY',margin,66);
-    x.fillStyle='#FFFFFF';x.font='700 56px Arial';x.fillText('MONTHLY REPORT',margin,132);
-    x.fillStyle='#DCE7EC';x.font='500 32px Arial';x.fillText(label,margin,184);
-    x.fillStyle='#647580';x.font='500 19px Arial';x.fillText('Generated: '+generated,margin,H-44);
-    x.textAlign='right';x.fillText('Page '+pageNo, W-margin,H-44);x.textAlign='left';
-    return {c,x,y:270};
-  }
-  function section(x,y,title){x.fillStyle='#182B3A';x.font='700 29px Arial';x.fillText(title,margin,y);x.strokeStyle='#D7E0E5';x.lineWidth=2;x.beginPath();x.moveTo(margin,y+15);x.lineTo(W-margin,y+15);x.stroke();return y+45;}
-  function row(x,y,a,b,idx){x.fillStyle=idx%2?'#FFFFFF':'#EAF0F3';x.fillRect(margin,y-30,W-margin*2,rowH);x.fillStyle='#263943';x.font='500 20px Arial';x.fillText(a,margin+16,y);x.textAlign='right';x.font='700 20px Arial';x.fillText(b,W-margin-16,y);x.textAlign='left';}
-  let p=pageBase(1),x=p.x,y=p.y;
-  y=section(x,y,'MONTH AT A GLANCE');
-  const cards=[['TOTAL INCOME',inc,'#16804A'],['TOTAL EXPENSE',exp,'#B93832'],['BALANCE',bal,bal>=0?'#2367A8':'#B93832']];
-  const cw=(W-margin*2-24)/3;
-  cards.forEach((a,i)=>{const xx=margin+i*(cw+12);x.fillStyle='#FFFFFF';x.beginPath();x.roundRect(xx,y,cw,132,18);x.fill();x.fillStyle='#647580';x.font='700 19px Arial';x.fillText(a[0],xx+20,y+36);x.fillStyle=a[2];x.font='700 34px Arial';x.fillText(moneyText(a[1]),xx+20,y+86);});
-  y+=174;y=section(x,y,'SPENDING BY CATEGORY');
-  if(cats.length){cats.forEach((c,i)=>{if(y>H-120){pages.push(p.c.toDataURL('image/jpeg',.94));p=pageBase(pages.length+1);x=p.x;y=p.y;y=section(x,y,'SPENDING BY CATEGORY (CONTINUED)');}row(x,y,`${c.name}`,moneyText(c.value),i);y+=rowH;});}else{x.fillStyle='#647580';x.font='500 22px Arial';x.fillText('No spending recorded for this month.',margin,y);y+=rowH;}
-  y+=30;
-  const drawTransactions=(title,items,kind)=>{
-    if(y>H-170){pages.push(p.c.toDataURL('image/jpeg',.94));p=pageBase(pages.length+1);x=p.x;y=p.y;}
-    y=section(x,y,title);
-    if(!items.length){x.fillStyle='#647580';x.font='500 21px Arial';x.fillText('No '+title.toLowerCase()+' recorded.',margin,y);y+=rowH;return;}
-    items.forEach((item,i)=>{
-      if(y>H-105){pages.push(p.c.toDataURL('image/jpeg',.94));p=pageBase(pages.length+1);x=p.x;y=p.y;y=section(x,y,title+' (CONTINUED)');}
-      const detail=kind==='income'?(item.s||'Income'):(item.t||'Expense');
-      const desc=[fmtDate(item.d),detail,item.n||item.p||''].filter(Boolean).join('  •  ');
-      row(x,y,desc,moneyText(item.a),i);y+=rowH;
-      if(item.r){x.fillStyle='#647580';x.font='italic 16px Arial';x.fillText('Remark: '+item.r,margin+16,y-7);y+=18;}
-    });
-  };
-  drawTransactions('INCOME DETAILS',incomes,'income');
-  y+=20;drawTransactions('EXPENSE DETAILS',expenses,'expense');
-  pages.push(p.c.toDataURL('image/jpeg',.94));
-  toast('Preparing monthly PDF…');
-  try{const blob=makeJpegPdf(pages);saveBlobFile(`budget-report-${y}-${pad(m+1)}.pdf`,blob);}catch(err){console.error(err);toast('Could not create the monthly PDF. Please try again.');}
-}
-
 function saveBlobFile(name,blob){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1500);
   toast('Downloaded '+name);
+}
+
+async function downloadMonthlyPdf(){
+  const {m,y}=S.ui, D=S.data, label=periodLabel();
+  const incomes=D.income.filter(x=>inP(x.d,m,y)).slice().sort((a,b)=>a.d.localeCompare(b.d));
+  const expenses=D.expenses.filter(x=>inP(x.d,m,y)).slice().sort((a,b)=>a.d.localeCompare(b.d));
+  const inc=C.income(D,m,y), exp=C.expense(D,m,y), bal=r2(inc-exp), cats=C.categories(D,m,y);
+  const W=1240,H=1754, navy='#17324D', teal='#187A72', green='#16803C', red='#C62828', ink='#1D2935', muted='#667482', line='#DCE3E8', soft='#F5F7F8', white='#FFFFFF';
+  const pages=[]; let pageNo=0;
+  const makePage=(title,subtitle)=>{const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d'); x.fillStyle=white;x.fillRect(0,0,W,H);x.fillStyle=navy;x.fillRect(0,0,W,220);x.fillStyle=white;x.font='700 50px Bricolage Grotesque, Arial';x.fillText('MONTHLY FINANCIAL REPORT',64,82);x.fillStyle='#D5E1E9';x.font='600 26px Figtree, Arial';x.fillText(title,66,132);x.font='500 18px Figtree, Arial';x.fillText(subtitle,66,174);pageNo++;return {c,x};};
+  let {c,x}=makePage(label,debtGeneratedStamp());
+  x.fillStyle=ink;x.font='700 24px Figtree, Arial';x.fillText('MONTH SUMMARY',64,280);
+  const cards=[['TOTAL INCOME',money(inc),green],['TOTAL EXPENSE',money(exp),red],['BALANCE',money(bal),bal>=0?teal:red]];
+  cards.forEach((a,i)=>{let xx=64+i*374;x.fillStyle=soft;x.beginPath();x.roundRect(xx,310,350,132,18);x.fill();x.fillStyle=muted;x.font='700 18px Figtree, Arial';x.fillText(a[0],xx+22,350);x.fillStyle=a[2];x.font='700 32px Bricolage Grotesque, Arial';pdfFitText(x,a[1],xx+22,402,305,'700 32px Bricolage Grotesque, Arial',32);});
+  x.fillStyle=ink;x.font='700 24px Figtree, Arial';x.fillText('SPENDING BY CATEGORY',64,505);
+  let cy=548; if(cats.length){cats.forEach((cat,i)=>{if(cy>1580){x.fillStyle=muted;x.font='500 16px Figtree, Arial';x.fillText('See next page for remaining details.',64,cy);pages.push(c.toDataURL('image/jpeg',.94));({c,x}=makePage(label+' · Continued',debtGeneratedStamp()));cy=270;}x.fillStyle=i%2?white:'#FAFBFC';x.fillRect(64,cy-25,1110,48);x.fillStyle=PALETTE[i%PALETTE.length];x.beginPath();x.arc(86,cy-1,7,0,Math.PI*2);x.fill();x.fillStyle=ink;x.font='600 20px Figtree, Arial';x.fillText(cat.name,108,cy+6);x.textAlign='right';x.fillText(money(cat.value),1150,cy+6);x.textAlign='left';cy+=48;});}else{x.fillStyle=muted;x.font='500 20px Figtree, Arial';x.fillText('No spending recorded this month.',70,cy);cy+=45;}
+  cy+=28;
+  const drawTable=(heading,rows,kind)=>{if(cy>1510){pages.push(c.toDataURL('image/jpeg',.94));({c,x}=makePage(label+' · Transactions',debtGeneratedStamp()));cy=270;}x.fillStyle=ink;x.font='700 24px Figtree, Arial';x.fillText(heading,64,cy);cy+=22;x.fillStyle=navy;x.fillRect(64,cy,1110,48);x.fillStyle=white;x.font='700 17px Figtree, Arial';x.fillText('DATE',82,cy+30);x.fillText(kind==='income'?'SOURCE':'CATEGORY',310,cy+30);x.fillText('DETAILS',650,cy+30);x.textAlign='right';x.fillText('AMOUNT',1148,cy+30);x.textAlign='left';cy+=48;
+    if(!rows.length){x.fillStyle=muted;x.font='500 18px Figtree, Arial';x.fillText('No records for this month.',82,cy+29);cy+=48;return;}
+    rows.forEach((r,i)=>{if(cy>1600){pages.push(c.toDataURL('image/jpeg',.94));({c,x}=makePage(label+' · Transactions (continued)',debtGeneratedStamp()));cy=270;x.fillStyle=navy;x.fillRect(64,cy,1110,48);x.fillStyle=white;x.font='700 17px Figtree, Arial';x.fillText('DATE',82,cy+30);x.fillText(kind==='income'?'SOURCE':'CATEGORY',310,cy+30);x.fillText('DETAILS',650,cy+30);x.textAlign='right';x.fillText('AMOUNT',1148,cy+30);x.textAlign='left';cy+=48;}
+      x.fillStyle=i%2?white:'#FAFBFC';x.fillRect(64,cy,1110,52);x.strokeStyle=line;x.beginPath();x.moveTo(64,cy+52);x.lineTo(1174,cy+52);x.stroke();x.fillStyle=ink;x.font='500 17px Figtree, Arial';x.fillText(fmtDate(r.d),82,cy+31);x.fillText(String(kind==='income'?r.s||'—':r.t||'—').slice(0,24),310,cy+31);x.fillText(String(r.n||r.p||r.r||'—').slice(0,36),650,cy+31);x.textAlign='right';x.fillStyle=kind==='income'?green:red;x.font='700 18px Figtree, Arial';x.fillText(money(r.a),1148,cy+31);x.textAlign='left';cy+=52;});cy+=30;};
+  cy+=28;drawTable('INCOME DETAILS',incomes,'income');drawTable('EXPENSE DETAILS',expenses,'expense');
+  x.strokeStyle=line;x.beginPath();x.moveTo(64,1680);x.lineTo(1174,1680);x.stroke();x.fillStyle=muted;x.font='500 15px Figtree, Arial';x.fillText('Generated by Budget Tracker · '+debtGeneratedStamp(),64,1712);x.textAlign='right';x.fillText('Page '+(pageNo),1174,1712);x.textAlign='left';pages.push(c.toDataURL('image/jpeg',.94));
+  saveBlobFile('budget-report-'+y+'-'+String(m+1).padStart(2,'0')+'.pdf',makeJpegPdf(pages));
 }
 
 function doExport(what){
@@ -1060,7 +1039,7 @@ document.addEventListener('click',ev=>{
     case 'more':{const e=debtByKey(d.key);if(!e)break;const lent=e.type==='Money Lent';
       S.ui.sheet={type:'tx',kind:lent?'expenses':'income',id:null,lock:true,prefill:{c:lent?'Money Lent':'Borrowed',n:e.name}};renderSheet(true);break;}
     case 'downloadDebt':downloadDebtPdf(d.key);break;
-    case 'downloadMonthly':downloadMonthlyPdf();break;
+    case 'downloadMonthlyPdf':downloadMonthlyPdf();break;
     case 'theme':setTheme(d.v);renderSheet();break;
     case 'hidecleared':S.data.prefs.hideCleared=d.v==='1';saveData();renderSheet();render();break;
     case 'addcat':{
