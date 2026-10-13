@@ -420,7 +420,7 @@ function vDash(){
   ${firstRun?`<section class="card"><h2>Welcome</h2><p class="muted small">Add your first entry, or restore a backup file you saved earlier.</p><div class="two" style="margin-top:12px"><button class="btn primary sm" data-act="add" data-kind="expenses">Add an entry</button><button class="btn sm" data-act="settings">Restore backup</button></div></section>`:''}
   <section class="hero" aria-label="Balance for ${esc(periodLabel())}">
     <p class="hero-label">Balance</p>
-    <p class="hero-num ${bal>=0?'pos':'neg'}" data-balance-target="${bal}" aria-label="Balance ${money(bal)}">${money(0)}</p>
+    <p class="hero-num ${bal>=0?'pos':'neg'}">${money(bal)}</p>
     <p class="hero-sub">${esc(sub)}</p>
     <div class="split" role="img" aria-label="Spent ${money(exp)} of ${money(inc)} income"><span style="width:${share.toFixed(2)}%"></span></div>
     <dl class="hero-row">
@@ -568,29 +568,9 @@ function vYearly(){
 }
 
 /* ---------- render ---------- */
-function animateDashboardBalance(){
-  const el=$('[data-balance-target]');
-  if(!el)return;
-  const target=Number(el.dataset.balanceTarget)||0;
-  // Respect accessibility preferences while keeping the final value accurate.
-  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches){el.textContent=money(target);return;}
-  const duration=620;
-  let startTime=null;
-  const tick=now=>{
-    if(!document.body.contains(el))return;
-    if(startTime===null)startTime=now;
-    const progress=Math.min(1,(now-startTime)/duration);
-    const eased=1-Math.pow(1-progress,3);
-    el.textContent=money(target*eased);
-    if(progress<1)requestAnimationFrame(tick);else el.textContent=money(target);
-  };
-  el.textContent=money(0);
-  requestAnimationFrame(tick);
-}
 function render(){
   const t=S.ui.tab;
   $('#view').innerHTML=t==='dash'?vDash():t==='income'?vList('income'):t==='expenses'?vList('expenses'):t==='debt'?vDebt():vYearly();
-  if(t==='dash')animateDashboardBalance();
   document.querySelectorAll('.nav button').forEach(b=>{
     if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
   });
