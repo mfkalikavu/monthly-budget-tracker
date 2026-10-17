@@ -180,6 +180,11 @@ td.nil{color:var(--muted)}
 details summary{cursor:pointer;font-weight:600;min-height:40px;display:flex;align-items:center}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .tile.sav .v{color:#6D4CC3}
+.docitem{border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:10px;display:grid;gap:8px;background:var(--surface-2)}
+.docitem-h{display:flex;justify-content:space-between;align-items:center}
+.doctotal{display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:800;font-size:1.1rem;padding:12px 14px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);margin:10px 0 4px}
+.hint.warn{color:var(--exp-ink);background:var(--exp-soft);border-radius:10px;padding:8px 12px}
+input[type=checkbox]{accent-color:var(--ink)}
 .dashboard-download{display:flex;justify-content:center;margin:18px 0 8px}
 .dashboard-download .btn{width:100%;max-width:420px;min-height:48px}
 </style>
@@ -420,7 +425,7 @@ function vDash(){
   ${firstRun?`<section class="card"><h2>Welcome</h2><p class="muted small">Add your first entry, or restore a backup file you saved earlier.</p><div class="two" style="margin-top:12px"><button class="btn primary sm" data-act="add" data-kind="expenses">Add an entry</button><button class="btn sm" data-act="settings">Restore backup</button></div></section>`:''}
   <section class="hero" aria-label="Balance for ${esc(periodLabel())}">
     <p class="hero-label">Balance</p>
-    <p class="hero-num ${bal>=0?'pos':'neg'}" data-balance-target="${bal}" aria-label="Balance ${money(bal)}">${money(0)}</p>
+    <p class="hero-num ${bal>=0?'pos':'neg'}">${money(bal)}</p>
     <p class="hero-sub">${esc(sub)}</p>
     <div class="split" role="img" aria-label="Spent ${money(exp)} of ${money(inc)} income"><span style="width:${share.toFixed(2)}%"></span></div>
     <dl class="hero-row">
@@ -568,29 +573,9 @@ function vYearly(){
 }
 
 /* ---------- render ---------- */
-function animateDashboardBalance(){
-  const el=$('[data-balance-target]');
-  if(!el)return;
-  const target=Number(el.dataset.balanceTarget)||0;
-  // Respect accessibility preferences while keeping the final value accurate.
-  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches){el.textContent=money(target);return;}
-  const duration=620;
-  let startTime=null;
-  const tick=now=>{
-    if(!document.body.contains(el))return;
-    if(startTime===null)startTime=now;
-    const progress=Math.min(1,(now-startTime)/duration);
-    const eased=1-Math.pow(1-progress,3);
-    el.textContent=money(target*eased);
-    if(progress<1)requestAnimationFrame(tick);else el.textContent=money(target);
-  };
-  el.textContent=money(0);
-  requestAnimationFrame(tick);
-}
 function render(){
   const t=S.ui.tab;
   $('#view').innerHTML=t==='dash'?vDash():t==='income'?vList('income'):t==='expenses'?vList('expenses'):t==='debt'?vDebt():vYearly();
-  if(t==='dash')animateDashboardBalance();
   document.querySelectorAll('.nav button').forEach(b=>{
     if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
   });
@@ -693,17 +678,186 @@ function catBlock(list,label,hint){
   <div class="addrow"><input type="text" id="new-${list}" placeholder="Add to list" aria-label="New ${label.toLowerCase()} item" maxlength="40"><button class="btn sm" data-act="addcat" data-list="${list}">Add</button></div>`;
 }
 function getTheme(){try{return localStorage.getItem(THEME_KEY)||'system';}catch(e){return 'system';}}
+/* ---------- Graphic invoice + receipt (Settings) ---------- */
+const DOC_KEY='bt-docs-v1';
+const ORIG_PAY={name:'MOHAMMED FAHIS K',acc:'50100625255739',ifsc:'HDFC0004017',branch:'TIRURANGADI, CHEMMAD',gpay:'9745547755'};
+const ORIG_UPI='fahiskalikavu@okhdfcbank';   // payee encoded in the original QR (decoded from the reference invoice)
+const pad2=n=>String(n).padStart(2,'0');
+function docDefaults(){return{
+  inv:{number:'30',date:todayISO(),billName:'M.A.M ALBIRR SCHOOL',billAddr:'Puthupparamba',
+    items:[{name:'Program Poster',desc:'workshop',price:'350',qty:'1'},{name:'Election Poster',desc:'main',price:'350',qty:'1'}],
+    heading:'Graphic Design Services Invoice',
+    paragraph:'Thank you for choosing our graphic design services. We kindly request that you confirm receipt of this invoice. If you have any questions or concerns, please do not hesitate to contact us. Your prompt response is greatly appreciated. Please make the payment through the given details below. Thank you for your business, and we look forward to work with you again in the future.',
+    pay:{...ORIG_PAY},qrMode:'auto',qrData:'',qrName:''},
+  rec:{number:'INV 30',date:todayISO(),client:'',line2:'',
+    thanks:'We sincerely extend our heartfelt gratitude for your prompt payment and for partnering with us',
+    quote:'"Your trust and collaboration bring our creative visions to life. It has been an absolute pleasure crafting these designs and edits for your project. We look forward to creating more amazing visuals together in the future!"',
+    amount:'',signer:'Creative Director',note:'Note: This is an official electronic acknowledgment of your payment received.',sign:true}};}
+let DOC=null;
+function docLoad(){
+  if(DOC)return DOC;
+  const d=docDefaults();
+  try{
+    const raw=JSON.parse(localStorage.getItem(DOC_KEY)||'null');
+    if(raw&&raw.inv)Object.assign(d.inv,raw.inv,{pay:Object.assign({},d.inv.pay,raw.inv.pay||{}),items:Array.isArray(raw.inv.items)?raw.inv.items:d.inv.items,date:todayISO()});
+    if(raw&&raw.rec)Object.assign(d.rec,raw.rec,{date:todayISO()});
+  }catch(e){}
+  DOC=d;return DOC;
+}
+function docSave(){try{localStorage.setItem(DOC_KEY,JSON.stringify(DOC));}catch(e){}}
+const docNum=v=>{const n=parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,''));return isFinite(n)?n:0;};
+const docQty=v=>Math.max(1,Math.round(docNum(v))||1);
+const parseISO=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?{y:+m[1],m:+m[2],d:+m[3]}:null;};
+const invDate=s=>{const p=parseISO(s);return p?MONTHS[p.m-1]+', '+pad2(p.d)+'-'+p.y:'';};      // June, 20-2026
+const recDate=s=>{const p=parseISO(s);return p?pad2(p.d)+'/'+pad2(p.m)+'/'+p.y:'';};            // 29/03/2025
+const docPayChanged=D=>Object.keys(ORIG_PAY).some(k=>String(D.pay[k]||'').trim()!==ORIG_PAY[k]);
+function docTotalStr(){
+  const t=Math.round(DOC.inv.items.reduce((a,it)=>a+docNum(it.price)*docQty(it.qty),0)*100)/100;
+  return (window.DocGen?DocGen.money(t):t.toLocaleString('en-IN'))+'/-';
+}
+let docGenP=null;
+function loadDocGen(){
+  if(window.DocGen)return Promise.resolve();
+  return docGenP||(docGenP=new Promise((res,rej)=>{
+    const s=document.createElement('script');s.src='/docgen.js';
+    s.onload=()=>res();s.onerror=()=>{docGenP=null;rej(new Error('The PDF maker could not be loaded. Check your connection.'));};
+    document.head.appendChild(s);
+  }));
+}
+const dI=(id,label,key,val,o={})=>`<div class="field"><label for="${id}">${label}</label><input id="${id}" type="text" data-doc="${key}" value="${esc(val)}"${o.mode?` inputmode="${o.mode}"`:''}${o.ph?` placeholder="${esc(o.ph)}"`:''} autocomplete="off"></div>`;
+const dT=(id,label,key,val,rows)=>`<div class="field"><label for="${id}">${label}</label><textarea id="${id}" data-doc="${key}" rows="${rows||3}" style="min-height:0;font-size:1rem">${esc(val)}</textarea></div>`;
+function docQrNote(){
+  const D=DOC.inv,ch=docPayChanged(D);
+  if(D.qrMode==='auto')return ch?'The payment details no longer match the ones the original QR was made for, so the QR will be left out. Upload a new QR, or choose “Original QR, I confirm” if you are sure it still applies.':'The original QR will be used. It pays UPI ID '+ORIG_UPI+'.';
+  if(D.qrMode==='force')return 'The original QR pays UPI ID '+ORIG_UPI+'. Make sure that is the account you want to be paid.';
+  if(D.qrMode==='upload')return D.qrData?'Using your uploaded QR'+(D.qrName?' ('+D.qrName+')':'')+'. It is not checked, so scan it once before sending.':'Choose an image of your QR code below.';
+  return 'No QR code will be printed.';
+}
+function docQrWarn(){return DOC.inv.qrMode==='auto'&&docPayChanged(DOC.inv)||(DOC.inv.qrMode==='upload'&&!DOC.inv.qrData);}
+function docItemsHTML(items){
+  return items.map((it,i)=>`<div class="docitem">
+    <div class="docitem-h"><b>Item ${i+1}</b><button type="button" class="linklike" data-act="docdel" data-i="${i}" aria-label="Remove item ${i+1}">Remove</button></div>
+    <input type="text" aria-label="Product ${i+1}" placeholder="Product or service" data-doc="item" data-i="${i}" data-k="name" value="${esc(it.name)}" autocomplete="off">
+    <input type="text" aria-label="Descriptor ${i+1}" placeholder="Bracket note, optional (printed in italics)" data-doc="item" data-i="${i}" data-k="desc" value="${esc(it.desc)}" autocomplete="off">
+    <div class="two"><input type="text" inputmode="decimal" aria-label="Price ${i+1}" placeholder="Price" data-doc="item" data-i="${i}" data-k="price" value="${esc(it.price)}" autocomplete="off"><input type="text" inputmode="numeric" aria-label="Quantity ${i+1}" placeholder="Qty" data-doc="item" data-i="${i}" data-k="qty" value="${esc(it.qty)}" autocomplete="off"></div>
+  </div>`).join('');
+}
+function docInvoiceHTML(){
+  const D=docLoad().inv,P=D.pay;
+  return `<div class="sheet-head"><h2 id="sheetTitle">Invoice</h2><button class="icon-btn" data-act="close" aria-label="Close">${I.close}</button></div>
+  <button type="button" class="linklike" data-act="docback" style="margin-bottom:12px">‹ Back to settings</button>
+  <div id="docForm">
+  <div class="two">${dI('d-number','Invoice number','number',D.number)}<div class="field"><label for="d-date">Date issued</label><input id="d-date" type="date" data-doc="date" value="${esc(D.date)}"></div></div>
+  ${dI('d-bn','Billing to (name)','billName',D.billName)}
+  ${dT('d-ba','Billing address','billAddr',D.billAddr,2)}
+  <h3 class="sec">Items</h3>
+  <p class="hint" style="margin-bottom:10px">The price shown on the invoice is price × quantity. The total updates by itself, and very long product text is shrunk to fit its line.</p>
+  <div id="docItems">${docItemsHTML(D.items)}</div>
+  <button type="button" class="btn sm" data-act="docadd" style="width:100%">Add item</button>
+  <div class="doctotal"><span>Total price</span><span id="docTotal">${esc(docTotalStr())}</span></div>
+  <h3 class="sec">Payment details</h3>
+  ${dI('d-pn','Name','pay.name',P.name)}${dI('d-pa','Account number','pay.acc',P.acc,{mode:'numeric'})}${dI('d-pi','IFSC','pay.ifsc',P.ifsc)}${dI('d-pb','Branch','pay.branch',P.branch)}${dI('d-pg','G.pay number','pay.gpay',P.gpay,{mode:'numeric'})}
+  <div class="field"><label for="d-qr">QR code</label>
+    <select id="d-qr" data-doc="qrMode">
+      <option value="auto"${D.qrMode==='auto'?' selected':''}>Original QR (if details unchanged)</option>
+      <option value="force"${D.qrMode==='force'?' selected':''}>Original QR, I confirm it applies</option>
+      <option value="upload"${D.qrMode==='upload'?' selected':''}>Upload a new QR</option>
+      <option value="none"${D.qrMode==='none'?' selected':''}>No QR code</option>
+    </select>
+    ${D.qrMode==='upload'?'<input id="docQrFile" type="file" accept="image/*" aria-label="QR image">':''}
+    <p id="docQrNote" class="hint${docQrWarn()?' warn':''}">${esc(docQrNote())}</p>
+  </div>
+  <details><summary>Wording on the invoice</summary>
+    ${dI('d-hd','Heading under the line','heading',D.heading)}
+    ${dT('d-pp','Paragraph','paragraph',D.paragraph,6)}
+  </details>
+  <div class="actions" style="margin-top:14px"><button type="button" id="docDl" class="btn primary" data-act="docdl">Download PDF</button></div>
+  </div>`;
+}
+function docReceiptHTML(){
+  const D=docLoad().rec;
+  return `<div class="sheet-head"><h2 id="sheetTitle">Receipt</h2><button class="icon-btn" data-act="close" aria-label="Close">${I.close}</button></div>
+  <button type="button" class="linklike" data-act="docback" style="margin-bottom:12px">‹ Back to settings</button>
+  <div id="docForm">
+  <div class="two">${dI('r-number','Receipt number','number',D.number)}<div class="field"><label for="r-date">Date</label><input id="r-date" type="date" data-doc="date" value="${esc(D.date)}"></div></div>
+  ${dI('r-client','Client name','client',D.client)}
+  ${dI('r-l2','Second line (address or school, optional)','line2',D.line2)}
+  ${dI('r-amt','Amount received','amount',D.amount,{mode:'decimal',ph:'e.g. 500'})}
+  <div class="field"><label for="r-sign" style="display:flex;gap:10px;align-items:center"><input id="r-sign" type="checkbox" data-doc="sign"${D.sign?' checked':''} style="width:22px;height:22px;flex:none"> Include my signature</label></div>
+  ${dI('r-signer','Title under the signature','signer',D.signer)}
+  <details><summary>Wording on the receipt</summary>
+    ${dT('r-th','Thank-you line','thanks',D.thanks,2)}
+    ${dT('r-q','Message','quote',D.quote,4)}
+    ${dI('r-note','Footer note','note',D.note)}
+  </details>
+  <div class="actions" style="margin-top:14px"><button type="button" id="docDl" class="btn primary" data-act="docdl">Download PDF</button></div>
+  </div>`;
+}
+function docRead(){
+  const sh=S.ui.sheet;if(!sh||(sh.type!=='invoice'&&sh.type!=='receipt'))return;
+  const root=$('#docForm');if(!root)return;
+  const D=sh.type==='invoice'?DOC.inv:DOC.rec;
+  root.querySelectorAll('[data-doc]').forEach(el=>{
+    const k=el.dataset.doc,v=el.type==='checkbox'?el.checked:el.value;
+    if(k==='item'){const it=D.items[+el.dataset.i];if(it)it[el.dataset.k]=v;}
+    else if(k.startsWith('pay.'))D.pay[k.slice(4)]=v;
+    else D[k]=v;
+  });
+  docSave();
+  const t=$('#docTotal');if(t)t.textContent=docTotalStr();
+  const n=$('#docQrNote');if(n){n.textContent=docQrNote();n.classList.toggle('warn',!!docQrWarn());}
+}
+function docOpen(type){docLoad();S.ui.sheet={type};renderSheet(true);loadDocGen().then(()=>{const t=$('#docTotal');if(t)t.textContent=docTotalStr();}).catch(()=>{});}
+function docQrFromFile(file){
+  if(!file)return;
+  const url=URL.createObjectURL(file),img=new Image();
+  img.onload=()=>{
+    const k=Math.min(1,700/Math.max(img.width,img.height)),c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(img.width*k));c.height=Math.max(1,Math.round(img.height*k));
+    const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);
+    URL.revokeObjectURL(url);
+    DOC.inv.qrData=c.toDataURL('image/png');DOC.inv.qrName=file.name;DOC.inv.qrMode='upload';docSave();renderSheet();
+  };
+  img.onerror=()=>{URL.revokeObjectURL(url);toast('That file is not an image I can read.');};
+  img.src=url;
+}
+function docInvoicePayload(){
+  const D=DOC.inv;let qr='none';
+  if(D.qrMode==='force')qr='original';
+  else if(D.qrMode==='auto')qr=docPayChanged(D)?'none':'original';
+  else if(D.qrMode==='upload')qr=D.qrData||'none';
+  return{number:String(D.number).trim(),date:invDate(D.date),billName:D.billName,billAddr:D.billAddr,
+    items:D.items.map(it=>({name:it.name,desc:it.desc,price:it.price,qty:docQty(it.qty)})),
+    heading:D.heading,paragraph:D.paragraph,pay:{...D.pay},qr};
+}
+function docReceiptPayload(){
+  const D=DOC.rec;
+  return{number:String(D.number).trim(),date:recDate(D.date),client:D.client,line2:D.line2,thanks:D.thanks,quote:D.quote,
+    amount:D.amount,signer:D.signer,note:D.note,signature:D.sign?'png':'none'};
+}
+async function docDownload(){
+  docRead();
+  const kind=S.ui.sheet&&S.ui.sheet.type;if(kind!=='invoice'&&kind!=='receipt')return;
+  const btn=$('#docDl');if(btn){btn.disabled=true;btn.textContent='Preparing PDF…';}
+  try{
+    await loadDocGen();
+    const r=kind==='invoice'?await DocGen.buildInvoice(docInvoicePayload()):await DocGen.buildReceipt(docReceiptPayload());
+    saveBlobFile(r.name,r.blob);
+    if(kind==='invoice'&&DOC.inv.qrMode==='auto'&&docPayChanged(DOC.inv))setTimeout(()=>toast('Downloaded without a QR because the payment details changed.'),2600);
+  }catch(e){toast('Couldn’t create the PDF. '+(e&&e.message?e.message:''));}
+  finally{const b=$('#docDl');if(b){b.disabled=false;b.textContent='Download PDF';}}
+}
 function settingsHTML(){
   const T=S.data.targets,theme=getTheme();
   const tf=(k,l)=>`<div class="field"><label for="t-${k}">${l}</label><input id="t-${k}" data-target="${k}" type="number" inputmode="numeric" min="0" value="${T[k]}"></div>`;
   return `<div class="sheet-head"><h2 id="sheetTitle">Settings</h2><button class="icon-btn" data-act="close" aria-label="Close">${I.close}</button></div>
   <h3 class="sec">Appearance</h3>
   <div class="seg" role="group" aria-label="Appearance">${['system','light','dark'].map(t=>`<button data-act="theme" data-v="${t}" aria-pressed="${theme===t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join('')}</div>
-  <h3 class="sec">Debt list</h3>
-  <p class="hint" style="margin-bottom:10px">Cleared debts stay in your records (so past months still add up correctly) but can be tucked out of the way.</p>
-  <div class="seg" role="group" aria-label="Cleared debts" style="margin-bottom:4px">
-    <button data-act="hidecleared" data-v="0" aria-pressed="${!S.data.prefs.hideCleared}">Show cleared</button>
-    <button data-act="hidecleared" data-v="1" aria-pressed="${!!S.data.prefs.hideCleared}">Hide cleared</button>
+  <h3 class="sec">Graphic invoice</h3>
+  <p class="hint" style="margin-bottom:10px">Fill in the details and download a PDF invoice or a payment receipt.</p>
+  <div class="seg" role="group" aria-label="Graphic invoice" style="margin-bottom:4px">
+    <button data-act="docinv" aria-pressed="false">Invoice</button>
+    <button data-act="docrec" aria-pressed="false">Receipt</button>
   </div>
   <h3 class="sec">Targets for the yearly table</h3>
   <p class="hint" style="margin-bottom:10px">These decide the green and red cells.</p>
@@ -728,7 +882,7 @@ function renderSheet(fresh){
   const root=$('#sheetRoot'),sh=S.ui.sheet;
   if(!sh){root.innerHTML='';return;}
   const old=$('.sheet',root),st=old?old.scrollTop:0;
-  const html=sh.type==='tx'?txSheetHTML(sh):sh.type==='debt'?debtSheetHTML(sh):sh.type==='newdebt'?newDebtHTML():settingsHTML();
+  const html=sh.type==='tx'?txSheetHTML(sh):sh.type==='debt'?debtSheetHTML(sh):sh.type==='newdebt'?newDebtHTML():sh.type==='invoice'?docInvoiceHTML():sh.type==='receipt'?docReceiptHTML():settingsHTML();
   root.innerHTML=`<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">${html}</div></div>`;
   const sheet=$('.sheet',root);sheet.scrollTop=st;
   if(sh.type==='tx')syncPerson();
@@ -1061,7 +1215,12 @@ document.addEventListener('click',ev=>{
     case 'downloadDebt':downloadDebtPdf(d.key);break;
     case 'downloadMonthlyPdf':downloadMonthlyPdf();break;
     case 'theme':setTheme(d.v);renderSheet();break;
-    case 'hidecleared':S.data.prefs.hideCleared=d.v==='1';saveData();renderSheet();render();break;
+    case 'docinv':docOpen('invoice');break;
+    case 'docrec':docOpen('receipt');break;
+    case 'docback':docRead();S.ui.sheet={type:'settings'};renderSheet(true);break;
+    case 'docadd':{docRead();DOC.inv.items.push({name:'',desc:'',price:'',qty:'1'});docSave();renderSheet();const l=document.querySelectorAll('#docItems .docitem input[data-k="name"]');if(l.length)l[l.length-1].focus();break;}
+    case 'docdel':{docRead();DOC.inv.items.splice(+d.i,1);docSave();renderSheet();break;}
+    case 'docdl':docDownload();break;
     case 'addcat':{
       const inp=$('#new-'+d.list),name=inp.value.trim();
       if(!name){inp.focus();break;}
@@ -1086,6 +1245,8 @@ document.addEventListener('click',ev=>{
 });
 document.addEventListener('change',ev=>{
   const t=ev.target;
+  if(t.id==='docQrFile'){docQrFromFile(t.files&&t.files[0]);return;}
+  if(t.closest&&t.closest('#docForm')&&t.dataset.doc==='qrMode'){docRead();renderSheet();return;}
   const fe0=$('#fErr');if(fe0&&fe0.innerHTML&&t.closest&&t.closest('#txBody'))fe0.innerHTML='';
   if(t.id==='mSel'){S.ui.m=+t.value;render();}
   else if(t.id==='ySel'){S.ui.y=+t.value;render();}
@@ -1096,6 +1257,7 @@ document.addEventListener('change',ev=>{
   }
 });
 document.addEventListener('input',ev=>{
+  if(ev.target.closest&&ev.target.closest('#docForm')&&ev.target.id!=='docQrFile'){docRead();return;}
   const fe=$('#fErr');if(fe&&fe.innerHTML&&ev.target.closest&&ev.target.closest('#txBody'))fe.innerHTML='';
   if(ev.target.id==='q'){const k=S.ui.tab;S.ui.q[k]=ev.target.value;$('#list').innerHTML=listHTML(k);}
 });
