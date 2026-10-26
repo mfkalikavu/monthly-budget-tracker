@@ -97,6 +97,13 @@ textarea{min-height:110px;font-size:.85rem}
 .tools{display:grid;gap:10px;margin-bottom:12px}
 .sumline{display:flex;justify-content:space-between;align-items:baseline;margin:6px 2px 0;color:var(--muted);font-size:.92rem}
 .sumline b{color:var(--ink);font-size:1.05rem}
+.totcard{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:8px 0 10px;padding:14px 16px;border-radius:16px;border:1px solid var(--line)}
+.totcard.in{background:var(--inc-soft);color:var(--inc-ink)}
+.totcard.out{background:var(--exp-soft);color:var(--exp-ink)}
+.totcard div{min-width:0}
+.totcard b{display:block;font-weight:700;overflow-wrap:anywhere}
+.totcard small{display:block;font-size:.85rem;opacity:.85}
+.totcard strong{font-size:1.45rem;font-weight:800;white-space:nowrap}
 .day{margin:16px 2px 8px;font:700 .9rem 'Figtree',sans-serif;color:var(--muted);letter-spacing:0}
 .flag{background:var(--exp-soft);color:var(--exp-ink);border-radius:8px;padding:1px 7px;font-size:.78rem;margin-left:6px}
 .row{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:11px 14px;margin-bottom:8px;min-height:58px}
@@ -473,7 +480,10 @@ function listHTML(kind){
     return `<div class="empty"><p>${S.ui.q[kind]?'Nothing matches that search.':`No ${what} recorded${where}.`}</p>${S.ui.q[kind]?'':`<button class="btn sm" data-act="add" data-kind="${kind}">Add ${kind==='income'?'income':'an expense'}</button>`}</div>`;
   }
   const tot=r2(rows.reduce((t,x)=>t+x.a,0));
-  let html=`<p class="sumline"><span>${rows.length} ${rows.length===1?'entry':'entries'}</span><b>${money(tot)}</b></p>`,cur='';
+  const sc=S.ui.scope[kind],qq=S.ui.q[kind].trim();
+  const rng=sc==='month'?periodLabel():sc==='all'?'All time':'Check dates';
+  const lbl=qq?`Total for \u201C${esc(qq)}\u201D`:'Total';
+  let html=`<div class="totcard ${kind==='income'?'in':'out'}" role="status"><div><b>${lbl}</b><small>${rng} \u00B7 ${rows.length} ${rows.length===1?'entry':'entries'}</small></div><strong>${kind==='income'?'+':''}${money(tot)}</strong></div>`,cur='';
   rows.forEach(x=>{
     if(x.d!==cur){cur=x.d;html+=`<h3 class="day">${esc(fmtDate(x.d))}${badDate(x.d)?'<span class="flag">Check date</span>':''}</h3>`;}
     html+=rowHTML(kind,x);
