@@ -186,6 +186,63 @@ td.nil{color:var(--muted)}
 .toast.show{opacity:1}
 details summary{cursor:pointer;font-weight:600;min-height:40px;display:flex;align-items:center}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* ---------- responsive layouts: phone (default above) -> tablet -> desktop ---------- */
+@media (min-width:700px){
+  .app{width:min(100%,760px);padding-left:24px;padding-right:24px}
+  .nav,.fab-wrap{width:min(100%,760px)}
+  .fab-wrap{padding:0 24px}
+  .chips{margin:0 -24px;padding-left:24px;padding-right:24px}
+}
+@media (min-width:1000px){
+  body{padding-left:230px}
+  .app{width:min(100%,1120px);padding:0 36px 80px}
+  .top{padding-top:26px;padding-bottom:10px}
+  .top h1{font-size:1.65rem}
+  .period{max-width:420px}
+  .chips{margin:0;padding-left:0;padding-right:0;flex-wrap:wrap;overflow:visible}
+  /* bottom tab bar becomes a left sidebar */
+  .nav{left:0;top:0;bottom:0;transform:none;width:230px;display:flex;flex-direction:column;justify-content:flex-start;gap:6px;padding:28px 14px;border-top:0;border-right:1px solid var(--line)}
+  .nav::before{content:'Budget';font:800 1.35rem/1 'Bricolage Grotesque','Figtree',sans-serif;letter-spacing:-.02em;padding:0 14px 22px}
+  .nav button{flex-direction:row;justify-content:flex-start;gap:12px;min-height:48px;padding:0 14px;font-size:.98rem}
+  .nav button:hover{background:var(--surface-2);color:var(--ink)}
+  .fab-wrap{left:230px;right:0;transform:none;width:auto;bottom:30px;padding:0 max(36px,calc((100vw - 230px - 1120px)/2 + 36px))}
+  .toast{bottom:36px}
+  table{font-size:.95rem;min-width:0}
+  th,td{padding:12px 14px}
+  .card{padding:20px 22px}
+  /* tabs become grids so the extra width is used */
+  #view[data-tab="dash"]{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;align-items:start}
+  #view[data-tab="dash"]>*{margin:0}
+  #view[data-tab="dash"]>.period,#view[data-tab="dash"]>.card,#view[data-tab="dash"]>.dashboard-download,#view[data-tab="dash"]>.notice{grid-column:1/-1}
+  #view[data-tab="dash"]>.hero{grid-column:span 7}
+  #view[data-tab="dash"]>.tiles{grid-column:span 5;grid-template-columns:1fr;align-self:stretch}
+  #view[data-tab="dash"]>.tiles .tile{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  #view[data-tab="dash"]>.tiles .tile dd{text-align:right}
+  .dashboard-download{justify-content:flex-start}
+  .tools{display:flex;gap:12px;align-items:center}
+  .tools .seg{flex:none;min-width:320px}
+  .tools #q{flex:1}
+  .row{grid-template-columns:minmax(150px,260px) 1fr auto;column-gap:20px;align-items:center;padding:12px 18px}
+  .row b{grid-column:1;grid-row:1}
+  .row small{grid-column:2;grid-row:1}
+  .row .amt{grid-column:3;grid-row:1;font-size:1.1rem}
+  #view[data-tab="debt"]{display:grid;grid-template-columns:1fr 1fr;column-gap:14px;align-items:start}
+  #view[data-tab="debt"]>.tiles,#view[data-tab="debt"]>.notice,#view[data-tab="debt"]>.chips,#view[data-tab="debt"]>.empty,#view[data-tab="debt"]>.period{grid-column:1/-1}
+  #view[data-tab="yearly"]{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  #view[data-tab="yearly"]>*{margin:0}
+  #view[data-tab="yearly"]>.period,#view[data-tab="yearly"]>section:first-of-type{grid-column:1/-1}
+  #view[data-tab="yearly"]>.period{margin-bottom:0}
+  .sheet{width:min(100%,640px)}
+}
+@media (min-width:1000px) and (hover:hover){
+  .row:hover,.debt:hover{border-color:var(--ink)}
+  .chip:hover,.icon-btn:hover,.btn:hover{border-color:var(--muted)}
+}
+@media (min-width:1500px){
+  .app{width:min(100%,1280px)}
+  .fab-wrap{padding:0 max(36px,calc((100vw - 230px - 1280px)/2 + 36px))}
+}
+
 .tile.sav .v{color:#6D4CC3}
 .docitem{border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:10px;display:grid;gap:8px;background:var(--surface-2)}
 .docitem-h{display:flex;justify-content:space-between;align-items:center}
@@ -695,6 +752,7 @@ function vYearly(){
 /* ---------- render ---------- */
 function render(){
   const t=S.ui.tab;
+  $('#view').dataset.tab=t;
   $('#view').innerHTML=t==='dash'?vDash():t==='income'?vList('income'):t==='expenses'?vList('expenses'):t==='debt'?vDebt():vYearly();
   document.querySelectorAll('.nav button').forEach(b=>{
     if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
