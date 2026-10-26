@@ -265,7 +265,7 @@ const C={
     return {
       income:nz(C.income(D,m,y)), expense:nz(C.expense(D,m,y)),
       savings:nz(C.typeSum(D,'Savings',m,y)), freelance:nz(C.sourceSum(D,'Freelance',m,y)),
-      bike:nz(C.typeSum(D,'Bike EMI',m,y)), charity:nz(C.typeSum(D,'Charity',m,y)),
+      bike:nz(C.typeSum(D,'Bike EMI',m,y)),
       credit:nz(C.typeSum(D,'Credit card Bill',m,y))
     };
   },
@@ -482,8 +482,16 @@ function listHTML(kind){
   const tot=r2(rows.reduce((t,x)=>t+x.a,0));
   const sc=S.ui.scope[kind],qq=S.ui.q[kind].trim();
   const rng=sc==='month'?periodLabel():sc==='all'?'All time':'Check dates';
-  const lbl=qq?`Total for \u201C${esc(qq)}\u201D`:'Total';
-  let html=`<div class="totcard ${kind==='income'?'in':'out'}" role="status"><div><b>${lbl}</b><small>${rng} \u00B7 ${rows.length} ${rows.length===1?'entry':'entries'}</small></div><strong>${kind==='income'?'+':''}${money(tot)}</strong></div>`,cur='';
+  // When the search matches a category name, the big total is that category only; entries that merely mention the
+  // word in a note (or match the amount) are listed below but shown separately so they never inflate the category total.
+  const qn=norm(qq),catOf=x=>kind==='income'?x.s:x.t;
+  const inCat=qq?rows.filter(x=>norm(catOf(x)).includes(qn)):rows;
+  const others=qq?rows.filter(x=>!norm(catOf(x)).includes(qn)):[];
+  const catMode=!!qq&&inCat.length>0;
+  const shown=catMode?inCat:rows,shownTot=catMode?r2(inCat.reduce((t,x)=>t+x.a,0)):tot;
+  const lbl=qq?(catMode?`Total for \u201C${esc(qq)}\u201D category`:`Total for \u201C${esc(qq)}\u201D (notes or amount)`):'Total';
+  const extra=catMode&&others.length?`<small>Not counted: ${others.length} other ${others.length===1?'entry':'entries'} (${money(r2(others.reduce((t,x)=>t+x.a,0)))}) that only mention \u201C${esc(qq)}\u201D in notes or amount</small>`:'';
+  let html=`<div class="totcard ${kind==='income'?'in':'out'}" role="status"><div><b>${lbl}</b><small>${rng} \u00B7 ${shown.length} ${shown.length===1?'entry':'entries'}</small>${extra}</div><strong>${kind==='income'?'+':''}${money(shownTot)}</strong></div>`,cur='';
   rows.forEach(x=>{
     if(x.d!==cur){cur=x.d;html+=`<h3 class="day">${esc(fmtDate(x.d))}${badDate(x.d)?'<span class="flag">Check date</span>':''}</h3>`;}
     html+=rowHTML(kind,x);
@@ -545,17 +553,117 @@ function barChart(rows){
   <div class="key"><span><i class="dot" style="background:var(--inc)"></i>Income</span><span><i class="dot" style="background:var(--exp)"></i>Expense</span><span><i class="dot" style="background:var(--bar-bal)"></i>Balance</span></div>`;
 }
 
+/* ---------- Yearly summary downloads (PDF + Google Sheets-ready .xlsx) ---------- */
+const YEAR_COLS=[['income','Income'],['expense','Expense'],['savings','Savings'],['freelance','Freelance'],['bike','Bike EMI'],['credit','Credit bill']];
+function yearCls(T){return{
+  income:v=>v==null?'nil':v>=T.incomeHigh?'good':v<=T.incomeLow?'bad':'',
+  expense:v=>v==null?'nil':v<=T.expenseLimit?'good':'bad',
+  savings:v=>v==null?'nil':v>=T.savingsGoal?'good':'bad',
+  freelance:v=>v==null?'nil':v>=T.freelanceGoal?'good':'',
+  bike:v=>v==null?'nil':'',credit:v=>v==null?'nil':''
+};}
+function yearData(){
+  const D=S.data,y=S.ui.y,rows=MONTHS.map((n,m)=>C.yearRow(D,m,y));
+  const sum=k=>r2(rows.reduce((t,r)=>t+(r[k]||0),0));
+  return{y,rows,sum,cls:yearCls(D.targets)};
+}
+async function downloadYearlyPdf(){
+  const {y,rows,sum,cls}=yearData();
+  const W=1240,H=1754,navy='#17324D',teal='#187A72',green='#16803C',red='#C62828',ink='#1D2935',muted='#667482',line='#DCE3E8',soft='#F5F7F8',white='#FFFFFF';
+  const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  x.fillStyle=white;x.fillRect(0,0,W,H);x.fillStyle=navy;x.fillRect(0,0,W,220);
+  x.fillStyle=white;x.font='700 50px Bricolage Grotesque, Arial';x.fillText('YEARLY SUMMARY',64,82);
+  x.fillStyle='#D5E1E9';x.font='600 26px Figtree, Arial';x.fillText('Year '+y,66,132);x.font='500 18px Figtree, Arial';x.fillText(debtGeneratedStamp(),66,174);
+  const inc=sum('income'),exp=sum('expense'),sav=sum('savings');
+  [['TOTAL INCOME',money(inc),green],['TOTAL EXPENSE',money(exp),red],['TOTAL SAVINGS',money(sav),teal]].forEach((a,i)=>{
+    const xx=64+i*374;x.fillStyle=soft;x.beginPath();x.roundRect(xx,260,350,122,18);x.fill();
+    x.fillStyle=muted;x.font='700 18px Figtree, Arial';x.fillText(a[0],xx+22,300);
+    x.fillStyle=a[2];x.font='700 32px Bricolage Grotesque, Arial';pdfFitText(x,a[1],xx+22,350,305,'700 32px Bricolage Grotesque, Arial',32);
+  });
+  // table
+  const colW=[150,160,160,160,160,160,160],X0=64,rowH=54;let ty=430;
+  x.fillStyle=navy;x.fillRect(X0,ty,1110,rowH);x.fillStyle=white;x.font='700 19px Figtree, Arial';x.fillText('MONTH',X0+18,ty+34);
+  let cx=X0+colW[0];x.textAlign='right';YEAR_COLS.forEach(([k,l],i)=>{x.fillText(l.toUpperCase(),cx+colW[i+1]-16,ty+34);cx+=colW[i+1];});x.textAlign='left';
+  ty+=rowH;
+  rows.forEach((r,i)=>{
+    x.fillStyle=i%2?white:'#FAFBFC';x.fillRect(X0,ty,1110,rowH);
+    x.fillStyle=ink;x.font='600 19px Figtree, Arial';x.fillText(MONTHS[i],X0+18,ty+34);
+    let cx2=X0+colW[0];
+    YEAR_COLS.forEach(([k],j)=>{
+      const v=r[k],cl=cls[k](v);
+      if(cl==='good'||cl==='bad'){x.fillStyle=cl==='good'?'#E3F6EA':'#FDE6E3';x.fillRect(cx2+6,ty+5,colW[j+1]-12,rowH-10);}
+      x.fillStyle=v==null?'#9AA6B0':cl==='good'?green:cl==='bad'?red:ink;x.font='500 19px Figtree, Arial';x.textAlign='right';
+      x.fillText(v==null?'–':nf.format(v),cx2+colW[j+1]-16,ty+34);x.textAlign='left';cx2+=colW[j+1];
+    });
+    x.strokeStyle=line;x.beginPath();x.moveTo(X0,ty+rowH);x.lineTo(X0+1110,ty+rowH);x.stroke();
+    ty+=rowH;
+  });
+  x.fillStyle=soft;x.fillRect(X0,ty,1110,rowH+4);x.fillStyle=ink;x.font='700 19px Figtree, Arial';x.fillText('TOTAL',X0+18,ty+36);
+  let cx3=X0+colW[0];YEAR_COLS.forEach(([k],j)=>{x.textAlign='right';x.fillText(nf.format(sum(k)),cx3+colW[j+1]-16,ty+36);x.textAlign='left';cx3+=colW[j+1];});
+  ty+=rowH+4;x.strokeStyle=navy;x.lineWidth=2;x.beginPath();x.moveTo(X0,ty);x.lineTo(X0+1110,ty);x.stroke();x.lineWidth=1;
+  x.fillStyle=muted;x.font='500 16px Figtree, Arial';x.fillText('Green meets your target, red misses it. Amounts are in ₹.',X0,ty+30);
+  // chart
+  ty+=84;x.fillStyle=ink;x.font='700 24px Figtree, Arial';x.fillText('INCOME, EXPENSE AND BALANCE BY MONTH',X0,ty);
+  const ch=rows.map(r=>({inc:r.income||0,exp:r.expense||0,bal:r2((r.income||0)-(r.expense||0))}));
+  const vals=ch.flatMap(r=>[r.inc,r.exp,r.bal]),max=Math.max(0,...vals),min=Math.min(0,...vals),span=(max-min)||1;
+  const cT=ty+40,cB=Math.min(cT+400,1560),Y=v=>cT+(max-v)/span*(cB-cT),y0=Y(0),gw=1110/12,bw=22;
+  if(!vals.some(v=>v!==0)){x.fillStyle=muted;x.font='500 18px Figtree, Arial';x.fillText('Nothing recorded for this year yet.',X0,cT+30);}
+  else{
+    ch.forEach((r,i)=>{[[r.inc,green],[r.exp,red],[r.bal,teal]].forEach(([v,col],k)=>{
+      const bx=X0+i*gw+(gw-3*bw)/2+k*bw,yy=Math.min(Y(v),y0),hh=Math.max(Math.abs(Y(v)-y0),v!==0?1:0);x.fillStyle=col;x.fillRect(bx,yy,bw-2,hh);});
+      x.fillStyle=muted;x.font='600 16px Figtree, Arial';x.textAlign='center';x.fillText(MON3[i],X0+i*gw+gw/2,cB+30);x.textAlign='left';});
+    x.strokeStyle=line;x.beginPath();x.moveTo(X0,y0);x.lineTo(X0+1110,y0);x.stroke();
+    let lx=X0;[['Income',green],['Expense',red],['Balance',teal]].forEach(([l,col])=>{x.fillStyle=col;x.fillRect(lx,cB+56,16,16);x.fillStyle=ink;x.font='500 17px Figtree, Arial';x.fillText(l,lx+24,cB+70);lx+=140;});
+  }
+  x.strokeStyle=line;x.beginPath();x.moveTo(64,1680);x.lineTo(1174,1680);x.stroke();
+  x.fillStyle=muted;x.font='500 15px Figtree, Arial';x.fillText('Generated by Budget Tracker · '+debtGeneratedStamp(),64,1712);
+  saveBlobFile('yearly-summary-'+y+'.pdf',makeJpegPdf([c.toDataURL('image/jpeg',.94)]));
+}
+/* minimal .xlsx writer (stored zip, no library) so Google Sheets / Excel open it with formatting and formulas */
+const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+const crc32=b=>{let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=CRC_T[(c^b[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;};
+function zipStore(files){
+  const enc=new TextEncoder(),chunks=[],cd=[];let off=0;
+  const u16=v=>[v&255,(v>>>8)&255],u32=v=>[v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];
+  files.forEach(([name,text])=>{
+    const nb=enc.encode(name),db=enc.encode(text),crc=crc32(db);
+    const lh=new Uint8Array([0x50,0x4b,3,4,...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(db.length),...u32(db.length),...u16(nb.length),...u16(0)]);
+    chunks.push(lh,nb,db);
+    cd.push(new Uint8Array([0x50,0x4b,1,2,...u16(20),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(db.length),...u32(db.length),...u16(nb.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)]),nb);
+    off+=lh.length+nb.length+db.length;
+  });
+  const cdLen=cd.reduce((t,p)=>t+p.length,0);
+  const end=new Uint8Array([0x50,0x4b,5,6,0,0,0,0,...u16(files.length),...u16(files.length),...u32(cdLen),...u32(off),0,0]);
+  return new Blob([...chunks,...cd,end],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function downloadYearlyXlsx(){
+  const {y,rows,sum,cls}=yearData();
+  const X=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const colL=i=>String.fromCharCode(65+i);
+  const str=(r,s,st)=>`<c r="${r}" t="inlineStr" s="${st}"><is><t>${X(s)}</t></is></c>`;
+  let sheet=`<row r="1">${str('A1','Yearly summary '+y,7)}</row><row r="2"></row><row r="3">${str('A3','Month',1)}${YEAR_COLS.map(([k,l],j)=>str(colL(j+1)+'3',l,1)).join('')}</row>`;
+  rows.forEach((r,i)=>{
+    const n=4+i;
+    sheet+=`<row r="${n}">${str('A'+n,MONTHS[i],8)}${YEAR_COLS.map(([k],j)=>{const v=r[k],cl=cls[k](v);return v==null?`<c r="${colL(j+1)}${n}" s="2"/>`:`<c r="${colL(j+1)}${n}" s="${cl==='good'?3:cl==='bad'?4:2}"><v>${v}</v></c>`;}).join('')}</row>`;
+  });
+  sheet+=`<row r="16">${str('A16','Total',6)}${YEAR_COLS.map(([k],j)=>`<c r="${colL(j+1)}16" s="5"><f>SUM(${colL(j+1)}4:${colL(j+1)}15)</f><v>${sum(k)}</v></c>`).join('')}</row>`;
+  sheet+=`<row r="18">${str('A18','Green meets your target and red misses it (targets are set in the app). Amounts are in INR.',8)}</row>`;
+  const head='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+  const files=[
+   ['[Content_Types].xml',head+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+   ['_rels/.rels',head+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+   ['xl/workbook.xml',head+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Yearly ${y}" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+   ['xl/_rels/workbook.xml.rels',head+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+   ['xl/styles.xml',head+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF17324D"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE3F6EA"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFDE6E3"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top style="thin"><color auto="1"/></top><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="9"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="4" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1"/><xf numFmtId="164" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>'],
+   ['xl/worksheets/sheet1.xml',head+`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols><col min="1" max="1" width="14" customWidth="1"/><col min="2" max="7" width="14" customWidth="1"/></cols><sheetData>${sheet}</sheetData></worksheet>`]
+  ];
+  saveBlobFile('yearly-summary-'+y+'.xlsx',zipStore(files));
+}
+
 function vYearly(){
   const D=S.data,y=S.ui.y,T=D.targets;
   const rows=MONTHS.map((n,m)=>C.yearRow(D,m,y));
-  const cls={
-    income:v=>v==null?'nil':v>=T.incomeHigh?'good':v<=T.incomeLow?'bad':'',
-    expense:v=>v==null?'nil':v<=T.expenseLimit?'good':'bad',
-    savings:v=>v==null?'nil':v>=T.savingsGoal?'good':'bad',
-    freelance:v=>v==null?'nil':v>=T.freelanceGoal?'good':'',
-    bike:v=>v==null?'nil':'',charity:v=>v==null?'nil':'',credit:v=>v==null?'nil':''
-  };
-  const cols=[['income','Income'],['expense','Expense'],['savings','Savings'],['freelance','Freelance'],['bike','Bike EMI'],['charity','Charity'],['credit','Credit bill']];
+  const cls=yearCls(T),cols=YEAR_COLS;
   const sum=k=>r2(rows.reduce((t,r)=>t+(r[k]||0),0));
   const chartRows=rows.map(r=>({inc:r.income||0,exp:r.expense||0,bal:r2((r.income||0)-(r.expense||0))}));
   return `${periodBar(false)}
@@ -566,6 +674,8 @@ function vYearly(){
       <tbody>${rows.map((r,i)=>`<tr><th scope="row"><span class="sr">${MONTHS[i]}</span><span aria-hidden="true">${MON3[i]}</span></th>${cols.map(([k])=>`<td class="${cls[k](r[k])}">${r[k]==null?'\u2013':nf.format(r[k])}</td>`).join('')}</tr>`).join('')}</tbody></table>
     </div>
     <p class="hint" style="margin-top:8px">Green meets your target and red misses it. Amounts are in \u20B9. Change targets in Settings.</p>
+    <div class="two" style="margin-top:12px"><button class="btn sm" data-act="yearlyPdf">Download PDF</button><button class="btn sm" data-act="yearlyXlsx">Google Sheets (.xlsx)</button></div>
+    <p class="hint" style="margin-top:6px">The spreadsheet file opens in Google Sheets: upload it to Google Drive, or use File \u203A Import in a new sheet. It includes live total formulas.</p>
   </section>
   <section class="card" aria-labelledby="yaH">
     <h2 id="yaH">Yearly analysis</h2>
@@ -1224,6 +1334,8 @@ document.addEventListener('click',ev=>{
       S.ui.sheet={type:'tx',kind:lent?'expenses':'income',id:null,lock:true,prefill:{c:lent?'Money Lent':'Borrowed',n:e.name}};renderSheet(true);break;}
     case 'downloadDebt':downloadDebtPdf(d.key);break;
     case 'downloadMonthlyPdf':downloadMonthlyPdf();break;
+    case 'yearlyPdf':downloadYearlyPdf();break;
+    case 'yearlyXlsx':downloadYearlyXlsx();break;
     case 'theme':setTheme(d.v);renderSheet();break;
     case 'docinv':docOpen('invoice');break;
     case 'docrec':docOpen('receipt');break;
