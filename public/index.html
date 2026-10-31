@@ -22,6 +22,7 @@
   --exp:#B4372A; --exp-soft:#F8E0DB; --exp-ink:#89291E;
   --focus:#2563EB; --scrim:rgba(12,22,26,.52);
   --bar-bal:#3B4A5A;
+  --hello-a:#1E3A8A; --hello-b:#2563EB;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -30,6 +31,7 @@
     --inc:#5FCF9E; --inc-soft:#163A2C; --inc-ink:#A2E6C6;
     --exp:#F38B7B; --exp-soft:#42201C; --exp-ink:#F7B7AC;
     --focus:#6EA0FF; --scrim:rgba(0,0,0,.62); --bar-bal:#9FB1C2;
+    --hello-a:#60A5FA; --hello-b:#38BDF8;
   }
 }
 :root[data-theme="dark"]{
@@ -38,6 +40,7 @@
   --inc:#5FCF9E; --inc-soft:#163A2C; --inc-ink:#A2E6C6;
   --exp:#F38B7B; --exp-soft:#42201C; --exp-ink:#F7B7AC;
   --focus:#6EA0FF; --scrim:rgba(0,0,0,.62); --bar-bal:#9FB1C2;
+  --hello-a:#60A5FA; --hello-b:#38BDF8;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -59,8 +62,15 @@ button{cursor:pointer}
 .period{display:flex;gap:8px;align-items:center;margin:10px 0 16px}
 .period select{flex:1;min-width:0;padding:10px 6px 10px 12px}
 .period #mSel{flex:1.7}
-select,input[type=password],input[type=text],input[type=number],input[type=date],input[type=search],textarea{width:100%;min-height:46px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:1rem}
+select,input[type=email],input[type=password],input[type=text],input[type=number],input[type=date],input[type=search],textarea{width:100%;min-height:46px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:1rem}
 textarea{min-height:110px;font-size:.85rem}
+.hello{font-size:1.55rem;line-height:1.2;margin:6px 0 2px;overflow-wrap:anywhere}
+.hello-name{color:var(--hello-b);background:linear-gradient(90deg,var(--hello-a),var(--hello-b));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.auth-note{font-size:.85rem;color:var(--muted);margin:10px 0 0;text-align:center}
+.auth-more{margin:0 0 14px;font-size:.9rem}
+.auth-more summary{cursor:pointer;color:var(--muted);font-weight:600}
+.auth-more .field{margin:10px 0 0}
+.who{font-weight:600;color:var(--ink)}
 .hero{background:var(--hero);color:var(--hero-ink);border-radius:20px;padding:20px 20px 18px}
 .hero-label{color:var(--hero-muted);font-weight:600;font-size:.95rem}
 .hero-num{font:800 clamp(2.6rem,13vw,3.5rem)/1.05 'Bricolage Grotesque','Figtree',system-ui,sans-serif;letter-spacing:-.03em;margin:2px 0 2px}
@@ -186,6 +196,63 @@ td.nil{color:var(--muted)}
 .toast.show{opacity:1}
 details summary{cursor:pointer;font-weight:600;min-height:40px;display:flex;align-items:center}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* ---------- responsive layouts: phone (default above) -> tablet -> desktop ---------- */
+@media (min-width:700px){
+  .app{width:min(100%,760px);padding-left:24px;padding-right:24px}
+  .nav,.fab-wrap{width:min(100%,760px)}
+  .fab-wrap{padding:0 24px}
+  .chips{margin:0 -24px;padding-left:24px;padding-right:24px}
+}
+@media (min-width:1000px){
+  body{padding-left:230px}
+  .app{width:min(100%,1120px);padding:0 36px 80px}
+  .top{padding-top:26px;padding-bottom:10px}
+  .top h1{font-size:1.65rem}
+  .period{max-width:420px}
+  .chips{margin:0;padding-left:0;padding-right:0;flex-wrap:wrap;overflow:visible}
+  /* bottom tab bar becomes a left sidebar */
+  .nav{left:0;top:0;bottom:0;transform:none;width:230px;display:flex;flex-direction:column;justify-content:flex-start;gap:6px;padding:28px 14px;border-top:0;border-right:1px solid var(--line)}
+  .nav::before{content:'Budget';font:800 1.35rem/1 'Bricolage Grotesque','Figtree',sans-serif;letter-spacing:-.02em;padding:0 14px 22px}
+  .nav button{flex-direction:row;justify-content:flex-start;gap:12px;min-height:48px;padding:0 14px;font-size:.98rem}
+  .nav button:hover{background:var(--surface-2);color:var(--ink)}
+  .fab-wrap{left:230px;right:0;transform:none;width:auto;bottom:30px;padding:0 max(36px,calc((100vw - 230px - 1120px)/2 + 36px))}
+  .toast{bottom:36px}
+  table{font-size:.95rem;min-width:0}
+  th,td{padding:12px 14px}
+  .card{padding:20px 22px}
+  /* tabs become grids so the extra width is used */
+  #view[data-tab="dash"]{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;align-items:start}
+  #view[data-tab="dash"]>*{margin:0}
+  #view[data-tab="dash"]>.period,#view[data-tab="dash"]>.card,#view[data-tab="dash"]>.dashboard-download,#view[data-tab="dash"]>.notice{grid-column:1/-1}
+  #view[data-tab="dash"]>.hero{grid-column:span 7}
+  #view[data-tab="dash"]>.tiles{grid-column:span 5;grid-template-columns:1fr;align-self:stretch}
+  #view[data-tab="dash"]>.tiles .tile{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  #view[data-tab="dash"]>.tiles .tile dd{text-align:right}
+  .dashboard-download{justify-content:flex-start}
+  .tools{display:flex;gap:12px;align-items:center}
+  .tools .seg{flex:none;min-width:320px}
+  .tools #q{flex:1}
+  .row{grid-template-columns:minmax(150px,260px) 1fr auto;column-gap:20px;align-items:center;padding:12px 18px}
+  .row b{grid-column:1;grid-row:1}
+  .row small{grid-column:2;grid-row:1}
+  .row .amt{grid-column:3;grid-row:1;font-size:1.1rem}
+  #view[data-tab="debt"]{display:grid;grid-template-columns:1fr 1fr;column-gap:14px;align-items:start}
+  #view[data-tab="debt"]>.tiles,#view[data-tab="debt"]>.notice,#view[data-tab="debt"]>.chips,#view[data-tab="debt"]>.empty,#view[data-tab="debt"]>.period{grid-column:1/-1}
+  #view[data-tab="yearly"]{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  #view[data-tab="yearly"]>*{margin:0}
+  #view[data-tab="yearly"]>.period,#view[data-tab="yearly"]>section:first-of-type{grid-column:1/-1}
+  #view[data-tab="yearly"]>.period{margin-bottom:0}
+  .sheet{width:min(100%,640px)}
+}
+@media (min-width:1000px) and (hover:hover){
+  .row:hover,.debt:hover{border-color:var(--ink)}
+  .chip:hover,.icon-btn:hover,.btn:hover{border-color:var(--muted)}
+}
+@media (min-width:1500px){
+  .app{width:min(100%,1280px)}
+  .fab-wrap{padding:0 max(36px,calc((100vw - 230px - 1280px)/2 + 36px))}
+}
+
 .tile.sav .v{color:#6D4CC3}
 .docitem{border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:10px;display:grid;gap:8px;background:var(--surface-2)}
 .docitem-h{display:flex;justify-content:space-between;align-items:center}
@@ -428,7 +495,8 @@ function vDash(){
   const share=inc>0?Math.max(0,Math.min(100,exp/inc*100)):(exp>0?100:0);
   const sub=bal>=0?'Left after expenses in '+periodLabel():'Spent more than you earned in '+periodLabel();
   const firstRun=!D.income.length&&!D.expenses.length;
-  return `${periodBar(true)}
+  return `${SY.name?`<h2 class="hello">Hello, <span class="hello-name">${esc(SY.name)}</span></h2>`:''}
+  ${periodBar(true)}
   ${firstRun?`<section class="card"><h2>Welcome</h2><p class="muted small">Add your first entry, or restore a backup file you saved earlier.</p><div class="two" style="margin-top:12px"><button class="btn primary sm" data-act="add" data-kind="expenses">Add an entry</button><button class="btn sm" data-act="settings">Restore backup</button></div></section>`:''}
   <section class="hero" aria-label="Balance for ${esc(periodLabel())}">
     <p class="hero-label">Balance</p>
@@ -695,6 +763,7 @@ function vYearly(){
 /* ---------- render ---------- */
 function render(){
   const t=S.ui.tab;
+  $('#view').dataset.tab=t;
   $('#view').innerHTML=t==='dash'?vDash():t==='income'?vList('income'):t==='expenses'?vList('expenses'):t==='debt'?vDebt():vYearly();
   document.querySelectorAll('.nav button').forEach(b=>{
     if(b.dataset.tab===t)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
@@ -986,7 +1055,7 @@ function settingsHTML(){
   ${catBlock('types','Expense types','Money Lent, Borrowed Return, Savings and Savings Withdrawal drive the totals and can\u2019t be removed.')}
   ${catBlock('modes','Payment modes','')}
   <h3 class="sec">Cloud storage</h3>
-  <p class="hint" style="margin-bottom:10px">${SY.mode==='cloud'?'Connected. Your entries are saved in your own database and shared by every device you unlock with your passcode.':SY.mode==='local'?'Not connected, so your entries stay in this browser only. '+esc(SY.notice||''):'Checking the connection\u2026'}</p>
+  <p class="hint" style="margin-bottom:10px">${SY.mode==='cloud'?'Signed in'+(SY.name?' as <span class="who">'+esc(SY.name)+'</span>':'')+(SY.email?' ('+esc(SY.email)+')':'')+'. Your entries are saved privately to your account and appear on every device where you sign in.':SY.mode==='local'?'Not connected, so your entries stay in this browser only. '+esc(SY.notice||''):'Checking the connection\u2026'}</p>
   ${SY.mode==='cloud'?'<div class="two"><button class="btn sm" data-act="syncnow">Sync now</button><button class="btn sm" data-act="signout">Sign out</button></div>':''}
   <h3 class="sec">Backup</h3>
   <p class="hint" style="margin-bottom:10px">${SY.mode==='cloud'?'A backup file is a safety copy you keep yourself, and the way to bring in older data.':'Save a backup file now and then, and use it to move to another phone or browser.'}</p>
@@ -1356,10 +1425,11 @@ document.addEventListener('click',ev=>{
     case 'pasteimport':importText($('#pasteIn').value);break;
     case 'reseed':askConfirm('Restore original data?','This replaces everything with the entries from your spreadsheet, including targets and lists.','Restore',()=>{S.data=fromSeed();saveData();render();renderSheet();toast('Original data restored');});break;
     case 'wipe':askConfirm('Delete all entries?','All income and expense entries will be removed. Your targets and lists stay. You can’t undo this.','Delete all',()=>{S.data.income=[];S.data.expenses=[];saveData();render();renderSheet();toast('All entries deleted');});break;
-    case 'unlock':unlock();break;
+    case 'authgo':authSubmit();break;
+    case 'authmode':authMode(d.mode);break;
     case 'syncnow':(async()=>{await cloudPull(false);if(SY.dirty)await cloudPush();toast(SY.state==='saved'?'Up to date':'Could not sync yet');renderSheet();})();break;
-    case 'signout':askConfirm('Sign out of this device?','This removes the passcode and the saved copy of your entries from this browser. Your data stays safe in the cloud.','Sign out',()=>{
-      try{localStorage.removeItem(PASS_KEY);localStorage.removeItem(STORE_KEY);localStorage.removeItem(META_KEY);}catch(e){}
+    case 'signout':askConfirm('Sign out of this device?','This removes your sign-in and the saved copy of your entries from this browser. Your data stays safe in the cloud, and you can sign back in any time.','Sign out',()=>{
+      try{[TOKEN_KEY,USER_KEY,STORE_KEY,META_KEY,DOC_KEY].forEach(k=>localStorage.removeItem(k));}catch(e){}
       location.reload();});break;
     case 'cyes':{const f=S.ui.confirm&&S.ui.confirm.onYes;closeConfirm();if(f)f();break;}
     case 'cno':case 'cscrim':closeConfirm();break;
@@ -1385,7 +1455,7 @@ document.addEventListener('input',ev=>{
 });
 document.addEventListener('keydown',ev=>{
   if(ev.key==='Escape'){if(S.ui.confirm){closeConfirm();}else if(S.ui.sheet){closeSheet();}return;}
-  if(ev.key==='Enter'&&ev.target.id==='lkIn'){ev.preventDefault();unlock();return;}
+  if(ev.key==='Enter'&&ev.target.closest&&ev.target.closest('#authForm')){ev.preventDefault();authSubmit();return;}
   if(ev.key==='Enter'&&ev.target.closest&&ev.target.closest('#txBody')&&ev.target.tagName==='INPUT'){ev.preventDefault();saveTx();return;}
   if(ev.key==='Tab'){
     const box=$('#lockRoot .dialog')||$('#confirmRoot .dialog')||$('#sheetRoot .sheet');if(!box)return;
@@ -1400,28 +1470,79 @@ document.addEventListener('keydown',ev=>{
 
 
 /* ---------- cloud sync (Vercel function + Upstash Redis) ---------- */
-const PASS_KEY='mbt.pass', META_KEY='mbt.meta';
-const SY={mode:'unknown',state:'',updatedAt:0,dirty:false,rev:0,timer:0,inflight:false,again:false,pass:'',notice:''};
+const TOKEN_KEY='mbt.token', USER_KEY='mbt.user', META_KEY='mbt.meta';
+const SY={mode:'unknown',state:'',updatedAt:0,dirty:false,rev:0,timer:0,inflight:false,again:false,token:'',uid:'',name:'',email:'',notice:''};
 function readMeta(){try{const m=JSON.parse(localStorage.getItem(META_KEY)||'{}');SY.updatedAt=+m.updatedAt||0;SY.dirty=!!m.dirty;}catch(e){}}
 function writeMeta(){try{localStorage.setItem(META_KEY,JSON.stringify({updatedAt:SY.updatedAt,dirty:SY.dirty}));}catch(e){}}
-const SYNC_TEXT={saving:'Saving\u2026',saved:'Saved to the cloud',offline:'Offline. Will retry.',local:'Saved on this device only',auth:'Locked',error:'Could not save. Will retry.'};
+const SYNC_TEXT={saving:'Saving…',saved:'Saved to the cloud',offline:'Offline. Will retry.',local:'Saved on this device only',auth:'Signed out',error:'Could not save. Will retry.'};
 function setSync(state){SY.state=state;const el=$('#sync');if(el){el.textContent=SYNC_TEXT[state]||'';el.dataset.state=state;}}
 async function api(method,body){
-  const r=await fetch('/api/data',{method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+SY.pass},body:body?JSON.stringify(body):undefined,cache:'no-store'});
+  const r=await fetch('/api/data',{method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+SY.token},body:body?JSON.stringify(body):undefined,cache:'no-store'});
+  let j=null;try{j=await r.json();}catch(e){}
+  return {status:r.status,json:j};
+}
+async function authApi(body){
+  const r=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});
   let j=null;try{j=await r.json();}catch(e){}
   return {status:r.status,json:j};
 }
 const payload=()=>({v:1,income:S.data.income,expenses:S.data.expenses,targets:S.data.targets,lists:S.data.lists});
-function showLock(msg){
+
+/* ---------- sign in / create account ---------- */
+let AUTH={mode:'login',name:'',email:'',busy:false};
+function showAuth(msg,mode){
   setSync('auth');
-  $('#lockRoot').innerHTML=`<div class="scrim top2" style="z-index:90;background:var(--bg)"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="lkT"><h2 id="lkT">Enter your passcode</h2><p>This tracker is private. Use the passcode you set as APP_PASSCODE in Vercel.</p>${msg?`<p class="err">${esc(msg)}</p>`:''}<div class="field"><label for="lkIn">Passcode</label><input id="lkIn" type="password" autocomplete="current-password"></div><button class="btn primary" data-act="unlock" style="width:100%">Unlock</button></div></div>`;
-  const i=$('#lkIn');if(i)i.focus();
+  if(mode)AUTH.mode=mode;
+  const su=AUTH.mode==='signup';
+  $('#lockRoot').innerHTML=`<div class="scrim top2" style="z-index:90;background:var(--bg);overflow:auto"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="lkT" id="authForm">
+    <h2 id="lkT">${su?'Create your account':'Welcome back'}</h2>
+    <p>${su?'You get your own private space to record your income and expenses.':'Sign in to open your own budget.'}</p>
+    <div class="seg" role="group" aria-label="Sign in or create account" style="margin-bottom:14px"><button data-act="authmode" data-mode="login" aria-pressed="${!su}">Sign in</button><button data-act="authmode" data-mode="signup" aria-pressed="${su}">Create account</button></div>
+    ${msg?`<p class="err" role="alert">${esc(msg)}</p>`:''}
+    ${su?`<div class="field"><label for="auName">Your name</label><input id="auName" type="text" autocomplete="name" maxlength="60" value="${esc(AUTH.name)}"></div>`:''}
+    <div class="field"><label for="auEmail">Email</label><input id="auEmail" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" value="${esc(AUTH.email)}"></div>
+    <div class="field"><label for="auPass">Password</label><input id="auPass" type="password" autocomplete="${su?'new-password':'current-password'}"${su?' minlength="8"':''}></div>
+    ${su?`<details class="auth-more"><summary>I used this app before with a passcode</summary><div class="field"><label for="auOld">Old passcode (brings your existing data into this account)</label><input id="auOld" type="password" autocomplete="off"></div></details>`:''}
+    <button class="btn primary" data-act="authgo" style="width:100%">${su?'Create account':'Sign in'}</button>
+    <p class="auth-note">${su?'Use at least 8 characters for your password.':'New here? Choose Create account.'}</p>
+  </div></div>`;
+  const f=$(su&&!AUTH.name?'#auName':AUTH.email?'#auPass':'#auEmail');if(f)f.focus();
+}
+function authMode(m){
+  AUTH.name=($('#auName')||{}).value||AUTH.name;AUTH.email=($('#auEmail')||{}).value||AUTH.email;
+  showAuth('',m);
 }
 const hideLock=()=>{$('#lockRoot').innerHTML='';};
-async function unlock(){
-  const v=($('#lkIn')||{}).value||'';
-  if(!v)return;
-  SY.pass=v;try{localStorage.setItem(PASS_KEY,v);}catch(e){}
+async function authSubmit(){
+  if(AUTH.busy)return;
+  const su=AUTH.mode==='signup';
+  const name=(($('#auName')||{}).value||'').trim(),email=(($('#auEmail')||{}).value||'').trim(),password=($('#auPass')||{}).value||'';
+  AUTH.name=name;AUTH.email=email;
+  if(su&&!name){showAuth('Please enter your name.');return;}
+  if(!email||!password){showAuth('Enter your email and password.');return;}
+  if(su&&password.length<8){showAuth('Choose a password of at least 8 characters.');return;}
+  const legacyPasscode=su?(($('#auOld')||{}).value||''):'';
+  AUTH.busy=true;
+  const btn=$('#authForm .btn.primary');if(btn){btn.disabled=true;btn.textContent='Please wait…';}
+  let res;
+  try{res=await authApi({action:su?'signup':'login',name,email,password,legacyPasscode});}
+  catch(e){AUTH.busy=false;showAuth('Could not reach the server. Check your connection and try again.');return;}
+  AUTH.busy=false;
+  if(res.status===503){hideLock();SY.mode='local';SY.notice=(res.json&&res.json.message)||'';renderNotice();setSync('local');return;}
+  if(res.status!==200||!res.json||!res.json.token){showAuth((res.json&&res.json.message)||'Something went wrong. Please try again.');return;}
+  const u=res.json.user;
+  let prev='';try{prev=(JSON.parse(localStorage.getItem(USER_KEY)||'null')||{}).id||'';}catch(e){}
+  if(prev!==u.id){
+    // A different person is signing in on this device: never show or upload the previous person's data.
+    try{[STORE_KEY,META_KEY,DOC_KEY].forEach(k=>localStorage.removeItem(k));}catch(e){}
+    S.data=fromSeed();SY.updatedAt=0;SY.dirty=false;writeMeta();
+    S.ui.sheet=null;S.ui.tab='dash';
+  }
+  SY.token=res.json.token;SY.uid=u.id;SY.name=u.name;SY.email=u.email;
+  try{localStorage.setItem(TOKEN_KEY,SY.token);localStorage.setItem(USER_KEY,JSON.stringify(u));}catch(e){}
+  AUTH.name='';AUTH.email='';
+  hideLock();render();
+  if(res.json.imported)toast('Your earlier data was brought into this account');
   await cloudPull(true);
 }
 function adoptRemote(rec,kind){
@@ -1437,7 +1558,7 @@ async function cloudPull(first){
   let res;
   try{res=await api('GET');}
   catch(e){if(first&&SY.mode==='unknown'){SY.mode='local';setSync(navigator.onLine?'local':'offline');}else setSync('offline');return;}
-  if(res.status===401){SY.pass&&res.json&&res.json.error==='bad_passcode'?showLock('That passcode is not right.'):showLock('');return;}
+  if(res.status===401){try{[TOKEN_KEY,USER_KEY].forEach(k=>localStorage.removeItem(k));}catch(e){}SY.token='';showAuth(SY.name?'Your sign-in has expired. Please sign in again.':'','login');return;}
   if(res.status===503){SY.mode='local';SY.notice=(res.json&&res.json.message)||'';renderNotice();setSync('local');return;}
   if(res.status!==200||!res.json){SY.mode='local';setSync('local');return;}
   SY.mode='cloud';SY.notice='';renderNotice();hideLock();
@@ -1467,14 +1588,26 @@ async function cloudPush(){
     const res=await api('PUT',{baseUpdatedAt:SY.updatedAt,data:payload()});
     if(res.status===200&&res.json){SY.updatedAt=res.json.updatedAt;SY.dirty=SY.rev!==rev;writeMeta();setSync(SY.dirty?'saving':'saved');if(SY.dirty)SY.again=true;}
     else if(res.status===409&&res.json&&res.json.record){adoptRemote(res.json.record,'conflict');}
-    else if(res.status===401){showLock('');}
+    else if(res.status===401){SY.token='';showAuth('Your sign-in has expired. Please sign in again.','login');}
     else{setSync('error');retryLater();}
   }catch(e){setSync('offline');retryLater();}
   finally{SY.inflight=false;if(SY.again){SY.again=false;cloudPush();}}
 }
 async function cloudInit(){
   readMeta();
-  try{SY.pass=localStorage.getItem(PASS_KEY)||'';}catch(e){}
+  try{
+    SY.token=localStorage.getItem(TOKEN_KEY)||'';
+    const u=JSON.parse(localStorage.getItem(USER_KEY)||'null');
+    if(u){SY.uid=u.id||'';SY.name=u.name||'';SY.email=u.email||'';}
+  }catch(e){}
+  if(!SY.token){
+    // Not signed in yet. Make sure a previous person's local copy is never shown, then ask them to sign in.
+    showAuth('','login');
+    // Find out whether cloud storage exists at all; if not, fall back to this-device-only mode.
+    try{const r=await authApi({action:'ping'});if(r.status===503){hideLock();SY.mode='local';SY.notice=(r.json&&r.json.message)||'';renderNotice();setSync('local');}}catch(e){}
+    return;
+  }
+  render();
   await cloudPull(true);
 }
 window.addEventListener('online',()=>{if(SY.mode==='cloud'&&SY.dirty)cloudPush();});

@@ -1,14 +1,17 @@
 # Monthly budget track (Vercel version)
 
 A phone-friendly budget app: Dashboard, Income, Expenses, Debt and Yearly summary.
-Your entries are saved in your own Redis database on Vercel (Upstash), behind a passcode,
-so every phone or laptop you unlock sees the same data.
+Everyone creates their own account (name, email, password). Each account has its own private space in your
+Redis database on Vercel (Upstash), so people can share one link but never see each other's entries.
+Sign in on any phone or laptop and you see your own data, kept in sync.
 
 ```
 public/index.html      the app (no data inside)
 public/docgen.js       makes the invoice and receipt PDFs (no external library)
 public/docs/           fonts, QR code, receipt header art and signature used by those PDFs
-api/data.js            the storage API (one record, protected by your passcode)
+api/auth.js            create account / sign in
+api/data.js            the storage API (one private record per signed-in person)
+api/_lib.js            shared helpers (password hashing, sign-in tokens, Redis)
 vercel.json            serves /public and asks search engines not to index it
 ```
 
@@ -21,13 +24,13 @@ vercel.json            serves /public and asks search engines not to index it
 2. **Add the database.** In your Vercel project open **Storage**, then **Create Database**,
    choose **Upstash for Redis** (free plan is fine) and **Connect to Project**.
    Vercel adds `KV_REST_API_URL` and `KV_REST_API_TOKEN` for you.
-3. **Set your passcode.** In **Settings, Environment Variables**, add `APP_PASSCODE`
-   with a long passcode only you know (for example four random words).
-   Apply it to Production, Preview and Development.
-4. **Redeploy** (Deployments, the latest one, Redeploy) so the variables take effect.
-5. **Open your site**, enter the passcode, then go to
+3. **(Only if you already used the old passcode version.)** Keep the `APP_PASSCODE` environment variable as it is.
+   It is now used only once, to move your existing data into your new account. New setups can skip this step.
+4. **Redeploy** (Deployments, the latest one, Redeploy) so the changes take effect.
+5. **Open your site and choose Create account.** If you used the app before, open
+   **I used this app before with a passcode** and enter your old passcode: your existing data moves into your account
+   (this works for one account only, the first to claim it). Otherwise use
    **Settings, Backup, Restore backup** and choose `YOUR-DATA-backup.json`.
-   Your spreadsheet data is now in the cloud.
 6. **Install it on your phone:** open the site in Chrome or Safari and choose
    **Add to Home Screen**.
 
@@ -38,13 +41,15 @@ Do not upload `YOUR-DATA-backup.json` to GitHub or Vercel. It is only for step 5
 - Changes save automatically a moment after you make them. The line under the title shows the status.
 - Offline changes are kept on the device and uploaded when you're back online.
 - If two devices edit at once, the one that saved first wins and the other loads the latest data.
-- **Settings, Sign out** removes the passcode and the local copy from that device.
+- **Settings, Sign out** removes your sign-in and the local copy from that device. Your data stays in the cloud.
+- Passwords are stored only as salted scrypt hashes. Sign-ins last 90 days on a device.
+- The Dashboard greets you by name ("Hello, ..."), using the name you gave when creating the account.
+- There is no password reset email yet. To reset one, delete that person's `bt:user:<email>` key in the Upstash console and have them sign up again (their data key `bt:data:<id>` is separate).
 - Keep a backup file now and then (Settings, Backup, Save backup).
 
 ## Good to know
 
 - The whole budget is one record, limited to roughly 900 KB (many thousands of entries).
-- Changing the passcode: edit `APP_PASSCODE` in Vercel, redeploy, then sign in again on each device.
 - To run locally: `npm i -g vercel`, add the same environment variables in a `.env` file,
   then `vercel dev`.
 
