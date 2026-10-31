@@ -1,0 +1,6 @@
+{
+  "name": "budget-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monthly budget tracker with accounts and cloud storage on Vercel + Upstash Redis"
+}
