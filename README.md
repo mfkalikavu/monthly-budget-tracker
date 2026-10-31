@@ -43,7 +43,7 @@ Do not upload `YOUR-DATA-backup.json` to GitHub or Vercel. It is only for step 5
 - If two devices edit at once, the one that saved first wins and the other loads the latest data.
 - **Settings, Sign out** removes your sign-in and the local copy from that device. Your data stays in the cloud.
 - Passwords are stored only as salted scrypt hashes. Sign-ins last 90 days on a device.
-- The Dashboard greets you by name ("Hello, ..."), using the name you gave when creating the account.
+- The Dashboard greets you by name ("Hi, ..."), using the name you gave when creating the account.
 - There is no password reset email yet. To reset one, delete that person's `bt:user:<email>` key in the Upstash console and have them sign up again (their data key `bt:data:<id>` is separate).
 - Keep a backup file now and then (Settings, Backup, Save backup).
 

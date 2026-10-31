@@ -22,7 +22,7 @@
   --exp:#B4372A; --exp-soft:#F8E0DB; --exp-ink:#89291E;
   --focus:#2563EB; --scrim:rgba(12,22,26,.52);
   --bar-bal:#3B4A5A;
-  --hello-a:#1E3A8A; --hello-b:#2563EB;
+  --hello-a:#0374E4; --hello-b:#3CACFB;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -31,7 +31,6 @@
     --inc:#5FCF9E; --inc-soft:#163A2C; --inc-ink:#A2E6C6;
     --exp:#F38B7B; --exp-soft:#42201C; --exp-ink:#F7B7AC;
     --focus:#6EA0FF; --scrim:rgba(0,0,0,.62); --bar-bal:#9FB1C2;
-    --hello-a:#60A5FA; --hello-b:#38BDF8;
   }
 }
 :root[data-theme="dark"]{
@@ -40,7 +39,6 @@
   --inc:#5FCF9E; --inc-soft:#163A2C; --inc-ink:#A2E6C6;
   --exp:#F38B7B; --exp-soft:#42201C; --exp-ink:#F7B7AC;
   --focus:#6EA0FF; --scrim:rgba(0,0,0,.62); --bar-bal:#9FB1C2;
-  --hello-a:#60A5FA; --hello-b:#38BDF8;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -64,8 +62,8 @@ button{cursor:pointer}
 .period #mSel{flex:1.7}
 select,input[type=email],input[type=password],input[type=text],input[type=number],input[type=date],input[type=search],textarea{width:100%;min-height:46px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:1rem}
 textarea{min-height:110px;font-size:.85rem}
-.hello{font-size:1.55rem;line-height:1.2;margin:6px 0 2px;overflow-wrap:anywhere}
-.hello-name{color:var(--hello-b);background:linear-gradient(90deg,var(--hello-a),var(--hello-b));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hello{font-size:clamp(1.45rem,7vw,2.1rem);font-weight:800;line-height:1.15;letter-spacing:-.01em;margin:26px 0 26px;overflow-wrap:anywhere}
+.hello-name{text-transform:uppercase;-webkit-box-decoration-break:clone;box-decoration-break:clone;color:var(--hello-b);background:linear-gradient(90deg,var(--hello-a),var(--hello-b));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .auth-note{font-size:.85rem;color:var(--muted);margin:10px 0 0;text-align:center}
 .auth-more{margin:0 0 14px;font-size:.9rem}
 .auth-more summary{cursor:pointer;color:var(--muted);font-weight:600}
@@ -495,7 +493,7 @@ function vDash(){
   const share=inc>0?Math.max(0,Math.min(100,exp/inc*100)):(exp>0?100:0);
   const sub=bal>=0?'Left after expenses in '+periodLabel():'Spent more than you earned in '+periodLabel();
   const firstRun=!D.income.length&&!D.expenses.length;
-  return `${SY.name?`<h2 class="hello">Hello, <span class="hello-name">${esc(SY.name)}</span></h2>`:''}
+  return `${SY.name?`<h2 class="hello">Hi, <span class="hello-name">${esc(SY.name)}</span></h2>`:''}
   ${periodBar(true)}
   ${firstRun?`<section class="card"><h2>Welcome</h2><p class="muted small">Add your first entry, or restore a backup file you saved earlier.</p><div class="two" style="margin-top:12px"><button class="btn primary sm" data-act="add" data-kind="expenses">Add an entry</button><button class="btn sm" data-act="settings">Restore backup</button></div></section>`:''}
   <section class="hero" aria-label="Balance for ${esc(periodLabel())}">
