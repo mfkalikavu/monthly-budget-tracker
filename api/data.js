@@ -25,7 +25,12 @@ module.exports = async function handler(req, res) {
     const key = dataKey(uid);
 
     if (req.method === 'GET') {
-      return res.status(200).json({ record: await readRecord(key) });
+      const record = await readRecord(key);
+      // ?since=<updatedAt>: a tiny reply when nothing has changed, so refreshing is cheap on mobile data.
+      let since = 0;
+      try { since = Number(new URL(req.url, 'http://x').searchParams.get('since')) || 0; } catch (e) {}
+      if (since && record && record.updatedAt === since) return res.status(200).json({ unchanged: true });
+      return res.status(200).json({ record });
     }
 
     if (req.method === 'PUT') {

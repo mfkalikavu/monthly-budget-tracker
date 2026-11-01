@@ -58,6 +58,28 @@ async function readToken(req) {
   } catch (e) { return null; }
 }
 
+// Keyed hash used for one-time codes (so a stolen database row can't be reversed without the server secret).
+async function hmac(text) {
+  return crypto.createHmac('sha256', await getSecret()).update(String(text)).digest('hex');
+}
+
+// Sends a plain-text email through Brevo's HTTP API (free plan: 300 emails a day).
+// Needs two environment variables in Vercel: BREVO_API_KEY and MAIL_FROM (an address verified in Brevo).
+const mailConfigured = () => !!(process.env.BREVO_API_KEY && process.env.MAIL_FROM);
+async function sendMail(to, subject, text) {
+  const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({
+      sender: { name: process.env.MAIL_FROM_NAME || 'Monthly budget track', email: process.env.MAIL_FROM },
+      to: [{ email: to }],
+      subject,
+      textContent: text,
+    }),
+  });
+  if (!r.ok) throw new Error('Mail provider error ' + r.status + ' ' + (await r.text().catch(() => '')).slice(0, 200));
+}
+
 function hashPassword(password, salt) {
   return new Promise((resolve, reject) =>
     crypto.scrypt(String(password), salt, 64, { N: 16384, r: 8, p: 1 }, (err, key) => (err ? reject(err) : resolve(key.toString('hex'))))
@@ -73,4 +95,4 @@ function parseBody(req) {
   return b || {};
 }
 
-module.exports = { LEGACY_KEY, redisConfig, redis, makeToken, readToken, hashPassword, userKey, dataKey, parseBody, crypto };
+module.exports = { hmac, mailConfigured, sendMail, LEGACY_KEY, redisConfig, redis, makeToken, readToken, hashPassword, userKey, dataKey, parseBody, crypto };

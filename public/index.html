@@ -62,6 +62,14 @@ button{cursor:pointer}
 .period #mSel{flex:1.7}
 select,input[type=email],input[type=password],input[type=text],input[type=number],input[type=date],input[type=search],textarea{width:100%;min-height:46px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:1rem}
 textarea{min-height:110px;font-size:.85rem}
+.ok{color:var(--inc-ink);background:var(--inc-soft);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:.92rem}
+.linkbtn{background:none;border:0;padding:8px 4px;color:var(--focus);font-weight:600;font-size:.92rem;text-decoration:underline;text-underline-offset:3px}
+.auth-links{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:6px}
+body{overscroll-behavior-y:contain}
+#ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 8px);z-index:80;transform:translate(-50%,-70px);opacity:0;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:99px;padding:8px 16px;font-size:.88rem;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+#ptr.go{transition:transform .2s,opacity .2s}
+.bio-ico{width:56px;height:56px;border-radius:18px;background:var(--surface-2);display:grid;place-items:center;margin:0 auto 14px}
+.bio-ico svg{width:30px;height:30px;fill:none;stroke:var(--ink);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .hello{font-size:clamp(1.325rem,6.4vw,1.925rem);font-weight:800;line-height:1.15;letter-spacing:-.01em;margin:26px 0 26px;overflow-wrap:anywhere}
 .hello-name{text-transform:uppercase;-webkit-box-decoration-break:clone;box-decoration-break:clone;color:var(--hello-b);background:linear-gradient(90deg,var(--hello-a),var(--hello-b));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .auth-note{font-size:.85rem;color:var(--muted);margin:10px 0 0;text-align:center}
@@ -282,6 +290,7 @@ input[type=checkbox]{accent-color:var(--ink)}
 <div id="sheetRoot"></div>
 <div id="confirmRoot"></div>
 <div id="lockRoot"></div>
+<div id="bioRoot"></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>
 'use strict';
@@ -1035,6 +1044,26 @@ async function docDownload(){
   }catch(e){toast('Couldn’t create the PDF. '+(e&&e.message?e.message:''));}
   finally{const b=$('#docDl');if(b){b.disabled=false;b.textContent='Download PDF';}}
 }
+function pwHTML(){
+  return `<div class="sheet-head"><h2 id="sheetTitle">Change password</h2><button class="icon-btn" data-act="pwback" aria-label="Back">${I.close}</button></div>
+  <div id="pwForm"><p class="muted" style="margin-bottom:14px">This is only the password for this app. It doesn\u2019t have to match your email password.</p>
+  <div id="pwErr"></div>
+  <div class="field"><label for="pwCur">Current password</label><input id="pwCur" type="password" autocomplete="current-password"></div>
+  <div class="field"><label for="pwNew">New password (at least 4 characters)</label><input id="pwNew" type="password" autocomplete="new-password"></div>
+  <div class="field"><label for="pwNew2">Type the new password again</label><input id="pwNew2" type="password" autocomplete="new-password"></div>
+  <div class="two"><button class="btn" data-act="pwback">Cancel</button><button class="btn primary" data-act="pwsave">Save password</button></div></div>`;
+}
+async function pwSave(){
+  const err=m=>{$('#pwErr').innerHTML=`<p class="err" role="alert">${esc(m)}</p>`;};
+  const cur=$('#pwCur').value,n1=$('#pwNew').value,n2=$('#pwNew2').value;
+  if(!cur){err('Enter your current password.');return;}
+  if(n1.length<4){err('Choose a new password of at least 4 characters.');return;}
+  if(n1!==n2){err('The two new passwords don\u2019t match.');return;}
+  if(n1===cur){err('The new password is the same as the current one.');return;}
+  let res;try{res=await authApi({action:'password',currentPassword:cur,newPassword:n1});}catch(e){err('Could not reach the server. Try again.');return;}
+  if(res.status===200){S.ui.sheet={type:'settings'};renderSheet(true);toast('Password changed');return;}
+  err((res.json&&res.json.message)||'Something went wrong. Please try again.');
+}
 function settingsHTML(){
   const T=S.data.targets,theme=getTheme();
   const tf=(k,l)=>`<div class="field"><label for="t-${k}">${l}</label><input id="t-${k}" data-target="${k}" type="number" inputmode="numeric" min="0" value="${T[k]}"></div>`;
@@ -1055,7 +1084,8 @@ function settingsHTML(){
   ${catBlock('modes','Payment modes','')}
   <h3 class="sec">Cloud storage</h3>
   <p class="hint" style="margin-bottom:10px">${SY.mode==='cloud'?'Signed in'+(SY.name?' as <span class="who">'+esc(SY.name)+'</span>':'')+(SY.email?' ('+esc(SY.email)+')':'')+'. Your entries are saved privately to your account and appear on every device where you sign in.':SY.mode==='local'?'Not connected, so your entries stay in this browser only. '+esc(SY.notice||''):'Checking the connection\u2026'}</p>
-  ${SY.mode==='cloud'?'<div class="two"><button class="btn sm" data-act="syncnow">Sync now</button><button class="btn sm" data-act="signout">Sign out</button></div>':''}
+  ${SY.mode==='cloud'?'<div class="two"><button class="btn sm" data-act="syncnow">Sync now</button><button class="btn sm" data-act="signout">Sign out</button></div><button class="btn sm" data-act="pwform" style="width:100%;margin-top:10px">Change password</button>':''}
+  ${SY.mode==='cloud'?bioSettingsHTML():''}
   <h3 class="sec">Backup</h3>
   <p class="hint" style="margin-bottom:10px">${SY.mode==='cloud'?'A backup file is a safety copy you keep yourself, and the way to bring in older data.':'Save a backup file now and then, and use it to move to another phone or browser.'}</p>
   <div class="two"><button class="btn sm" data-act="export" data-what="json">Save backup</button><button class="btn sm" data-act="pickfile">Restore backup</button></div>
@@ -1070,7 +1100,7 @@ function renderSheet(fresh){
   const root=$('#sheetRoot'),sh=S.ui.sheet;
   if(!sh){root.innerHTML='';return;}
   const old=$('.sheet',root),st=old?old.scrollTop:0;
-  const html=sh.type==='tx'?txSheetHTML(sh):sh.type==='debt'?debtSheetHTML(sh):sh.type==='newdebt'?newDebtHTML():sh.type==='invoice'?docInvoiceHTML():sh.type==='receipt'?docReceiptHTML():settingsHTML();
+  const html=sh.type==='tx'?txSheetHTML(sh):sh.type==='debt'?debtSheetHTML(sh):sh.type==='newdebt'?newDebtHTML():sh.type==='invoice'?docInvoiceHTML():sh.type==='receipt'?docReceiptHTML():sh.type==='password'?pwHTML():settingsHTML();
   root.innerHTML=`<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">${html}</div></div>`;
   const sheet=$('.sheet',root);sheet.scrollTop=st;
   if(sh.type==='tx')syncPerson();
@@ -1425,10 +1455,17 @@ document.addEventListener('click',ev=>{
     case 'reseed':askConfirm('Restore original data?','This replaces everything with the entries from your spreadsheet, including targets and lists.','Restore',()=>{S.data=fromSeed();saveData();render();renderSheet();toast('Original data restored');});break;
     case 'wipe':askConfirm('Delete all entries?','All income and expense entries will be removed. Your targets and lists stay. You can’t undo this.','Delete all',()=>{S.data.income=[];S.data.expenses=[];saveData();render();renderSheet();toast('All entries deleted');});break;
     case 'authgo':authSubmit();break;
+    case 'bioon':bioEnable();break;
+    case 'biooff':bioDisable();break;
+    case 'biounlock':bioUnlock(false);break;
+    case 'biosignout':try{[TOKEN_KEY,USER_KEY,STORE_KEY,META_KEY,DOC_KEY,LOCK_KEY].forEach(k=>localStorage.removeItem(k));}catch(e){}location.reload();break;
+    case 'pwform':S.ui.sheet={type:'password'};renderSheet(true);break;
+    case 'pwback':S.ui.sheet={type:'settings'};renderSheet(true);break;
+    case 'pwsave':pwSave();break;
     case 'authmode':authMode(d.mode);break;
-    case 'syncnow':(async()=>{await cloudPull(false);if(SY.dirty)await cloudPush();toast(SY.state==='saved'?'Up to date':'Could not sync yet');renderSheet();})();break;
+    case 'syncnow':(async()=>{await refreshNow(true);renderSheet();})();break;
     case 'signout':askConfirm('Sign out of this device?','This removes your sign-in and the saved copy of your entries from this browser. Your data stays safe in the cloud, and you can sign back in any time.','Sign out',()=>{
-      try{[TOKEN_KEY,USER_KEY,STORE_KEY,META_KEY,DOC_KEY].forEach(k=>localStorage.removeItem(k));}catch(e){}
+      try{[TOKEN_KEY,USER_KEY,STORE_KEY,META_KEY,DOC_KEY,LOCK_KEY].forEach(k=>localStorage.removeItem(k));}catch(e){}
       location.reload();});break;
     case 'cyes':{const f=S.ui.confirm&&S.ui.confirm.onYes;closeConfirm();if(f)f();break;}
     case 'cno':case 'cscrim':closeConfirm();break;
@@ -1454,7 +1491,8 @@ document.addEventListener('input',ev=>{
 });
 document.addEventListener('keydown',ev=>{
   if(ev.key==='Escape'){if(S.ui.confirm){closeConfirm();}else if(S.ui.sheet){closeSheet();}return;}
-  if(ev.key==='Enter'&&ev.target.closest&&ev.target.closest('#authForm')){ev.preventDefault();authSubmit();return;}
+  if(ev.key==='Enter'&&ev.target.closest&&ev.target.closest('#pwForm')){ev.preventDefault();pwSave();return;}
+  if(ev.key==='Enter'&&ev.target.tagName==='INPUT'&&ev.target.closest&&ev.target.closest('#authForm')){ev.preventDefault();authSubmit();return;}
   if(ev.key==='Enter'&&ev.target.closest&&ev.target.closest('#txBody')&&ev.target.tagName==='INPUT'){ev.preventDefault();saveTx();return;}
   if(ev.key==='Tab'){
     const box=$('#lockRoot .dialog')||$('#confirmRoot .dialog')||$('#sheetRoot .sheet');if(!box)return;
@@ -1475,13 +1513,13 @@ function readMeta(){try{const m=JSON.parse(localStorage.getItem(META_KEY)||'{}')
 function writeMeta(){try{localStorage.setItem(META_KEY,JSON.stringify({updatedAt:SY.updatedAt,dirty:SY.dirty}));}catch(e){}}
 const SYNC_TEXT={saving:'Saving…',saved:'Saved to the cloud',offline:'Offline. Will retry.',local:'Saved on this device only',auth:'Signed out',error:'Could not save. Will retry.'};
 function setSync(state){SY.state=state;const el=$('#sync');if(el){el.textContent=SYNC_TEXT[state]||'';el.dataset.state=state;}}
-async function api(method,body){
-  const r=await fetch('/api/data',{method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+SY.token},body:body?JSON.stringify(body):undefined,cache:'no-store'});
+async function api(method,body,query){
+  const r=await fetch('/api/data'+(query||''),{method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+SY.token},body:body?JSON.stringify(body):undefined,cache:'no-store'});
   let j=null;try{j=await r.json();}catch(e){}
   return {status:r.status,json:j};
 }
 async function authApi(body){
-  const r=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});
+  const r=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SY.token},body:JSON.stringify(body),cache:'no-store'});
   let j=null;try{j=await r.json();}catch(e){}
   return {status:r.status,json:j};
 }
@@ -1489,61 +1527,175 @@ const payload=()=>({v:1,income:S.data.income,expenses:S.data.expenses,targets:S.
 
 /* ---------- sign in / create account ---------- */
 let AUTH={mode:'login',name:'',email:'',busy:false};
-function showAuth(msg,mode){
+function showAuth(msg,mode,info){
   setSync('auth');
   if(mode)AUTH.mode=mode;
-  const su=AUTH.mode==='signup';
+  const m=AUTH.mode,su=m==='signup',fg=m==='forgot',rs=m==='reset',tabs=m==='login'||su;
+  const title=su?'Create your account':fg?'Forgot your password?':rs?'Enter your code':'Welcome back';
+  const sub=su?'You get your own private space to record your income and expenses.':fg?'Enter your email and we will send you a 6-digit code.':rs?'Type the code from your email and choose a new password.':'Sign in to open your own budget.';
+  const go=su?'Create account':fg?'Send code':rs?'Set new password':'Sign in';
   $('#lockRoot').innerHTML=`<div class="scrim top2" style="z-index:90;background:var(--bg);overflow:auto"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="lkT" id="authForm">
-    <h2 id="lkT">${su?'Create your account':'Welcome back'}</h2>
-    <p>${su?'You get your own private space to record your income and expenses.':'Sign in to open your own budget.'}</p>
-    <div class="seg" role="group" aria-label="Sign in or create account" style="margin-bottom:14px"><button data-act="authmode" data-mode="login" aria-pressed="${!su}">Sign in</button><button data-act="authmode" data-mode="signup" aria-pressed="${su}">Create account</button></div>
+    <h2 id="lkT">${title}</h2>
+    <p>${sub}</p>
+    ${tabs?`<div class="seg" role="group" aria-label="Sign in or create account" style="margin-bottom:14px"><button data-act="authmode" data-mode="login" aria-pressed="${!su}">Sign in</button><button data-act="authmode" data-mode="signup" aria-pressed="${su}">Create account</button></div>`:''}
+    ${info?`<p class="ok" role="status">${esc(info)}</p>`:''}
     ${msg?`<p class="err" role="alert">${esc(msg)}</p>`:''}
     ${su?`<div class="field"><label for="auName">Your name</label><input id="auName" type="text" autocomplete="name" maxlength="60" value="${esc(AUTH.name)}"></div>`:''}
     <div class="field"><label for="auEmail">Email</label><input id="auEmail" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" value="${esc(AUTH.email)}"></div>
-    <div class="field"><label for="auPass">Password</label><input id="auPass" type="password" autocomplete="${su?'new-password':'current-password'}"${su?' minlength="8"':''}></div>
+    ${rs?`<div class="field"><label for="auCode">6-digit code</label><input id="auCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]*"></div>`:''}
+    ${fg?'':`<div class="field"><label for="auPass">${rs?'New password (at least 4 characters)':'Password'}</label><input id="auPass" type="password" autocomplete="${su||rs?'new-password':'current-password'}"${su||rs?' minlength="4"':''}></div>`}
     ${su?`<details class="auth-more"><summary>I used this app before with a passcode</summary><div class="field"><label for="auOld">Old passcode (brings your existing data into this account)</label><input id="auOld" type="password" autocomplete="off"></div></details>`:''}
-    <button class="btn primary" data-act="authgo" style="width:100%">${su?'Create account':'Sign in'}</button>
-    <p class="auth-note">${su?'Use at least 8 characters for your password.':'New here? Choose Create account.'}</p>
+    <button class="btn primary" data-act="authgo" style="width:100%">${go}</button>
+    ${m==='login'?`<div class="auth-links"><button class="linkbtn" data-act="authmode" data-mode="forgot">Forgot password?</button></div>`:''}
+    ${fg||rs?`<div class="auth-links"><button class="linkbtn" data-act="authmode" data-mode="login">Back to sign in</button>${rs?`<button class="linkbtn" data-act="authmode" data-mode="forgot">Send a new code</button>`:''}</div>`:''}
+    ${su?`<p class="auth-note">Use at least 4 characters for your password.</p>`:''}
   </div></div>`;
-  const f=$(su&&!AUTH.name?'#auName':AUTH.email?'#auPass':'#auEmail');if(f)f.focus();
+  const f=$(rs?'#auCode':su&&!AUTH.name?'#auName':AUTH.email?(fg?'#auEmail':'#auPass'):'#auEmail');if(f)f.focus();
 }
 function authMode(m){
   AUTH.name=($('#auName')||{}).value||AUTH.name;AUTH.email=($('#auEmail')||{}).value||AUTH.email;
   showAuth('',m);
 }
 const hideLock=()=>{$('#lockRoot').innerHTML='';};
-async function authSubmit(){
-  if(AUTH.busy)return;
-  const su=AUTH.mode==='signup';
-  const name=(($('#auName')||{}).value||'').trim(),email=(($('#auEmail')||{}).value||'').trim(),password=($('#auPass')||{}).value||'';
-  AUTH.name=name;AUTH.email=email;
-  if(su&&!name){showAuth('Please enter your name.');return;}
-  if(!email||!password){showAuth('Enter your email and password.');return;}
-  if(su&&password.length<8){showAuth('Choose a password of at least 8 characters.');return;}
-  const legacyPasscode=su?(($('#auOld')||{}).value||''):'';
-  AUTH.busy=true;
-  const btn=$('#authForm .btn.primary');if(btn){btn.disabled=true;btn.textContent='Please wait…';}
-  let res;
-  try{res=await authApi({action:su?'signup':'login',name,email,password,legacyPasscode});}
-  catch(e){AUTH.busy=false;showAuth('Could not reach the server. Check your connection and try again.');return;}
-  AUTH.busy=false;
-  if(res.status===503){hideLock();SY.mode='local';SY.notice=(res.json&&res.json.message)||'';renderNotice();setSync('local');return;}
-  if(res.status!==200||!res.json||!res.json.token){showAuth((res.json&&res.json.message)||'Something went wrong. Please try again.');return;}
+const notConfigured=r=>r.status===503&&r.json&&r.json.error==='not_configured';
+function goLocal(r){hideLock();SY.mode='local';SY.notice=(r.json&&r.json.message)||'';renderNotice();setSync('local');}
+async function finishAuth(res){
   const u=res.json.user;
   let prev='';try{prev=(JSON.parse(localStorage.getItem(USER_KEY)||'null')||{}).id||'';}catch(e){}
   if(prev!==u.id){
     // A different person is signing in on this device: never show or upload the previous person's data.
-    try{[STORE_KEY,META_KEY,DOC_KEY].forEach(k=>localStorage.removeItem(k));}catch(e){}
+    try{[STORE_KEY,META_KEY,DOC_KEY,LOCK_KEY].forEach(k=>localStorage.removeItem(k));}catch(e){}
     S.data=fromSeed();SY.updatedAt=0;SY.dirty=false;writeMeta();
     S.ui.sheet=null;S.ui.tab='dash';
   }
   SY.token=res.json.token;SY.uid=u.id;SY.name=u.name;SY.email=u.email;
   try{localStorage.setItem(TOKEN_KEY,SY.token);localStorage.setItem(USER_KEY,JSON.stringify(u));}catch(e){}
-  AUTH.name='';AUTH.email='';
+  AUTH.name='';AUTH.email='';AUTH.mode='login';
   hideLock();render();
   if(res.json.imported)toast('Your earlier data was brought into this account');
   await cloudPull(true);
 }
+async function authSubmit(){
+  if(AUTH.busy)return;
+  const m=AUTH.mode,su=m==='signup',fg=m==='forgot',rs=m==='reset';
+  const name=(($('#auName')||{}).value||'').trim(),email=(($('#auEmail')||{}).value||'').trim(),password=($('#auPass')||{}).value||'',code=(($('#auCode')||{}).value||'').trim();
+  AUTH.name=name||AUTH.name;AUTH.email=email;
+  if(su&&!name){showAuth('Please enter your name.');return;}
+  if(!email){showAuth('Enter your email.');return;}
+  if(!fg&&!password){showAuth(rs?'Choose a new password.':'Enter your email and password.');return;}
+  if((su||rs)&&password.length<4){showAuth('Choose a password of at least 4 characters.');return;}
+  if(rs&&!/^\d{6}$/.test(code.replace(/\s+/g,''))){showAuth('Enter the 6-digit code from your email.');return;}
+  const legacyPasscode=su?(($('#auOld')||{}).value||''):'';
+  AUTH.busy=true;
+  const btn=$('#authForm .btn.primary');if(btn){btn.disabled=true;btn.textContent='Please wait…';}
+  let res;
+  try{res=await authApi(fg?{action:'forgot',email}:rs?{action:'reset',email,code,newPassword:password}:{action:su?'signup':'login',name,email,password,legacyPasscode});}
+  catch(e){AUTH.busy=false;showAuth('Could not reach the server. Check your connection and try again.');return;}
+  AUTH.busy=false;
+  if(notConfigured(res)){goLocal(res);return;}
+  if(fg){
+    if(res.status===200){showAuth('','reset',(res.json&&res.json.message)||'A code is on its way.');return;}
+    showAuth((res.json&&res.json.message)||'Something went wrong. Please try again.');return;
+  }
+  if(res.status!==200||!res.json||!res.json.token){showAuth((res.json&&res.json.message)||'Something went wrong. Please try again.');return;}
+  await finishAuth(res);
+  if(rs)toast('Password changed. You are signed in.');
+}
+
+/* ---------- Face ID / fingerprint lock (this device only) ---------- */
+const LOCK_KEY='mbt.lock';
+const BIO={avail:false,locked:false,busy:false,hiddenAt:0};
+const bioId=()=>{try{return localStorage.getItem(LOCK_KEY)||'';}catch(e){return '';}};
+const b64e=buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const b64d=t=>{t=t.replace(/-/g,'+').replace(/_/g,'/');const bin=atob(t+'='.repeat((4-t.length%4)%4));return Uint8Array.from(bin,c=>c.charCodeAt(0));};
+async function bioDetect(){
+  try{BIO.avail=!!(window.isSecureContext&&window.PublicKeyCredential&&PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable&&await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());}
+  catch(e){BIO.avail=false;}
+  if(S.ui.sheet&&S.ui.sheet.type==='settings')renderSheet();
+}
+const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
+async function bioVerify(){
+  await navigator.credentials.get({publicKey:{challenge:rnd(32),allowCredentials:[{type:'public-key',id:b64d(bioId()),transports:['internal']}],userVerification:'required',timeout:60000}});
+}
+async function bioEnable(){
+  try{
+    const c=await navigator.credentials.create({publicKey:{challenge:rnd(32),rp:{name:'Monthly budget track'},user:{id:rnd(16),name:SY.email||'user',displayName:SY.name||'User'},
+      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},timeout:60000,attestation:'none'}});
+    localStorage.setItem(LOCK_KEY,b64e(c.rawId));
+    toast('Lock is on for this device');
+  }catch(e){toast(e&&e.name==='NotAllowedError'?'Lock was not turned on':'This device could not set up the lock');}
+  renderSheet();
+}
+async function bioDisable(){
+  try{await bioVerify();}catch(e){toast('Could not confirm it is you');return;}
+  try{localStorage.removeItem(LOCK_KEY);}catch(e){}
+  toast('Lock is off');renderSheet();
+}
+function bioSettingsHTML(){
+  if(!BIO.avail&&!bioId())return `<h3 class="sec">App lock</h3><p class="hint">Face ID or fingerprint lock is not available in this browser. Open the app from your phone’s home screen or Chrome/Safari over a secure (https) link to use it.</p>`;
+  return bioId()
+    ?`<h3 class="sec">App lock</h3><p class="hint" style="margin-bottom:10px">On. This device asks for your face or fingerprint when the app opens, and again if you leave it for a minute.</p><button class="btn sm" data-act="biooff" style="width:100%">Turn off lock</button>`
+    :`<h3 class="sec">App lock</h3><p class="hint" style="margin-bottom:10px">Ask for your face or fingerprint every time the app opens on this device.</p><button class="btn sm" data-act="bioon" style="width:100%">Turn on Face ID / fingerprint lock</button>`;
+}
+function showBio(msg){
+  BIO.locked=true;
+  $('#bioRoot').innerHTML=`<div class="scrim top2" style="z-index:95;background:var(--bg)"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="bioT" style="text-align:center">
+    <div class="bio-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg></div>
+    <h2 id="bioT">App locked</h2><p>Use your face or fingerprint to open your budget.</p>
+    ${msg?`<p class="err" role="alert">${esc(msg)}</p>`:''}
+    <button class="btn primary" data-act="biounlock" style="width:100%">Unlock</button>
+    <div class="auth-links" style="justify-content:center"><button class="linkbtn" data-act="biosignout">Can’t unlock? Sign out and use password</button></div>
+  </div></div>`;
+}
+async function bioUnlock(auto){
+  if(BIO.busy)return;BIO.busy=true;
+  try{await bioVerify();BIO.locked=false;$('#bioRoot').innerHTML='';}
+  catch(e){if(!auto)showBio('Could not unlock. Try again.');}
+  finally{BIO.busy=false;}
+}
+const savedToken=()=>{try{return localStorage.getItem(TOKEN_KEY)||'';}catch(e){return '';}};
+function lockNow(){if(bioId()&&(SY.token||savedToken())&&!BIO.locked){showBio('');bioUnlock(true);}}
+
+/* ---------- refresh: pull down, and automatically ---------- */
+async function refreshNow(manual){
+  if(SY.mode!=='cloud'){if(manual)toast(SY.mode==='local'?'Not connected to the cloud':'Still connecting…');return;}
+  const before=SY.updatedAt;
+  if(SY.dirty)await cloudPush();
+  await cloudPull(false);
+  if(manual&&SY.updatedAt===before)toast(SY.state==='saved'?'Up to date':'Could not refresh. Check your connection.');
+}
+(function pullToRefresh(){
+  const el=document.createElement('div');el.id='ptr';el.setAttribute('aria-hidden','true');document.body.appendChild(el);
+  let y0=0,dy=0,on=false,busy=false;
+  const reset=()=>{el.classList.add('go');el.style.transform='translate(-50%,-70px)';el.style.opacity='0';};
+  document.addEventListener('touchstart',e=>{
+    const t=e.target;
+    if(busy||e.touches.length!==1||window.scrollY>0||S.ui.sheet||S.ui.confirm||BIO.locked||$('#lockRoot').innerHTML||(t.closest&&t.closest('table,select,input,textarea,.sheet,.dialog'))){on=false;return;}
+    on=true;y0=e.touches[0].clientY;dy=0;el.classList.remove('go');
+  },{passive:true});
+  document.addEventListener('touchmove',e=>{
+    if(!on)return;
+    if(window.scrollY>0){on=false;reset();return;}
+    dy=e.touches[0].clientY-y0;
+    if(dy<=8){el.style.opacity='0';return;}
+    const p=Math.min(dy*0.55,70);
+    el.textContent=dy>=90?'Release to refresh':'Pull to refresh';
+    el.style.transform='translate(-50%,'+(p-70+14)+'px)';el.style.opacity=String(Math.min(1,dy/60));
+  },{passive:true});
+  document.addEventListener('touchend',async()=>{
+    if(!on)return;on=false;
+    if(dy>=90){
+      busy=true;el.classList.add('go');el.textContent='Refreshing…';el.style.transform='translate(-50%,10px)';el.style.opacity='1';
+      try{await refreshNow(true);}finally{busy=false;reset();}
+    }else reset();
+  });
+  document.addEventListener('touchcancel',()=>{on=false;reset();});
+})();
+// Quietly check for changes made on another device while the app is open.
+setInterval(()=>{
+  const a=document.activeElement,typing=a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
+  if(document.visibilityState==='visible'&&SY.mode==='cloud'&&SY.token&&!SY.dirty&&!SY.inflight&&!S.ui.sheet&&!S.ui.confirm&&!BIO.locked&&!typing)cloudPull(false);
+},20000);
 function adoptRemote(rec,kind){
   const remote=normalize(rec.data);if(!remote)return;
   S.data=remote;
@@ -1555,12 +1707,13 @@ function adoptRemote(rec,kind){
 }
 async function cloudPull(first){
   let res;
-  try{res=await api('GET');}
+  try{res=await api('GET',null,(!first&&SY.updatedAt&&!SY.dirty)?'?since='+SY.updatedAt:'');}
   catch(e){if(first&&SY.mode==='unknown'){SY.mode='local';setSync(navigator.onLine?'local':'offline');}else setSync('offline');return;}
   if(res.status===401){try{[TOKEN_KEY,USER_KEY].forEach(k=>localStorage.removeItem(k));}catch(e){}SY.token='';showAuth(SY.name?'Your sign-in has expired. Please sign in again.':'','login');return;}
-  if(res.status===503){SY.mode='local';SY.notice=(res.json&&res.json.message)||'';renderNotice();setSync('local');return;}
+  if(notConfigured(res)){SY.mode='local';SY.notice=(res.json&&res.json.message)||'';renderNotice();setSync('local');return;}
   if(res.status!==200||!res.json){SY.mode='local';setSync('local');return;}
   SY.mode='cloud';SY.notice='';renderNotice();hideLock();
+  if(res.json.unchanged){setSync('saved');return;}
   const rec=res.json.record;
   if(!rec){SY.updatedAt=0;SY.dirty=true;writeMeta();await cloudPush();return;}
   if(SY.dirty&&rec.updatedAt===SY.updatedAt){await cloudPush();return;}
@@ -1603,7 +1756,7 @@ async function cloudInit(){
     // Not signed in yet. Make sure a previous person's local copy is never shown, then ask them to sign in.
     showAuth('','login');
     // Find out whether cloud storage exists at all; if not, fall back to this-device-only mode.
-    try{const r=await authApi({action:'ping'});if(r.status===503){hideLock();SY.mode='local';SY.notice=(r.json&&r.json.message)||'';renderNotice();setSync('local');}}catch(e){}
+    try{const r=await authApi({action:'ping'});if(notConfigured(r)){goLocal(r);}}catch(e){}
     return;
   }
   render();
@@ -1611,6 +1764,8 @@ async function cloudInit(){
 }
 window.addEventListener('online',()=>{if(SY.mode==='cloud'&&SY.dirty)cloudPush();});
 document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'){BIO.hiddenAt=Date.now();return;}
+  if(bioId()&&BIO.hiddenAt&&Date.now()-BIO.hiddenAt>60000)lockNow();
   if(document.visibilityState==='visible'&&SY.mode==='cloud'&&!SY.dirty&&!S.ui.sheet&&!S.ui.confirm)cloudPull(false);
 });
 
@@ -1620,6 +1775,8 @@ document.addEventListener('visibilitychange',()=>{
   S.data=loadData();
   try{if(!localStorage.getItem(STORE_KEY))localStorage.setItem(STORE_KEY,JSON.stringify(S.data));}catch(e){storageOK=false;}
   renderNotice();render();
+  lockNow();
+  bioDetect();
   cloudInit();
 })();
 //#app-end
