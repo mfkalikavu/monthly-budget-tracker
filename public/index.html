@@ -508,10 +508,21 @@ const SFX=(()=>{
     warn:[[0,'heavy'],[.09,'heavy']],         // delete / wipe
     success:[[0,'light'],[.085,'medium']],    // Face ID / passkey accepted (like the iPhone success tap-tap)
     error:[[0,'medium'],[.07,'medium'],[.14,'heavy']], // not accepted
-    refresh:[[0,'medium']],                   // pull to refresh
-    done:[[0,'select']],                      // refreshed with new data
+    nav:[[0,'light']],                        // switching section: Dashboard, Income, Expenses, Debt, Yearly
+    cling:[[0,'light'],[.085,'medium']],      // saved successfully
+    refresh:[],                               // pull to refresh: sound only, no tap
+    done:[],
   };
   const LIB={};Object.keys(PAT).forEach(n=>{LIB[n]=(c,d,t)=>PAT[n].forEach(([o,k])=>tap(c,d,t+o,k));});
+  // Clear, bright "cling": a glass / small-bell ping. Used when something is saved and when Face ID accepts you.
+  function bell(c,d,t,f,dur,g){
+    [[1,1,1],[2.76,.38,.55],[5.4,.16,.32]].forEach(([m,a,l])=>tone(c,d,f*m,t,dur*l,{gain:g*a,attack:.002}));
+  }
+  const cling=(c,d,t)=>{bell(c,d,t,1568,.7,.12);bell(c,d,t+.07,2093,.5,.08);};
+  LIB.cling=cling;LIB.success=cling;
+  // Refresh: a soft, standard "whoosh" (air sweeping up) when you pull, and one small light ping when new data arrives.
+  LIB.refresh=(c,d,t)=>noise(c,d,t,.36,{f0:350,f1:3200,q:.7,gain:.32,attack:.1});
+  LIB.done=(c,d,t)=>bell(c,d,t,2349,.3,.07);
   // Real haptics: iPhone Safari (17.4+) taps when a hidden switch is toggled; Android uses vibrate().
   let hx=null;
   function hapticOnce(kind){
@@ -558,8 +569,8 @@ const SFX=(()=>{
 })();
 // Which sound each button makes. Buttons that are not listed stay silent (tabs, month arrows, filters).
 const ACT_SFX={
-  save:'tap',add:'tap',newdebt:'tap',newlent:'tap',newborrowed:'tap',repay:'tap',more:'tap',addcat:'tap',docadd:'tap',docinv:'tap',docrec:'tap',
-  authgo:'tap',pwsave:'tap',pwform:'tap',biounlock:'tap',bioon:'tap',biooff:'tap',cyes:'tap',settings:'tap',
+  tab:'nav',add:'tap',newdebt:'tap',newlent:'tap',newborrowed:'tap',repay:'tap',more:'tap',docadd:'tap',docinv:'tap',docrec:'tap',
+  authgo:'tap',pwform:'tap',biounlock:'tap',bioon:'tap',biooff:'tap',cyes:'tap',settings:'tap',
   theme:'switch',
   export:'download',yearlyXlsx:'download',yearlyPdf:'download',downloadMonthlyPdf:'download',downloadDebt:'download',docdl:'download',
   pickfile:'upload',pasteimport:'upload',
@@ -571,7 +582,7 @@ const ACT_SFX={
 document.addEventListener('click',ev=>{
   const t=ev.target.closest&&ev.target.closest('[data-act]');if(!t)return;
   if((t.dataset.act==='scrim'||t.dataset.act==='cscrim')&&ev.target!==t)return;
-  const n=ACT_SFX[t.dataset.act]||(t.classList.contains('primary')&&!/^(scrim|cscrim|tab)$/.test(t.dataset.act)?'tap':'');
+  const n=ACT_SFX[t.dataset.act]||(t.classList.contains('primary')&&!/^(scrim|cscrim|tab|save|pwsave|addcat)$/.test(t.dataset.act)?'tap':'');
   if(n)SFX.play(n);
 },true);
 function soundSettingsHTML(){
@@ -1175,14 +1186,14 @@ function pwHTML(){
   <div class="two"><button class="btn" data-act="pwback">Cancel</button><button class="btn primary" data-act="pwsave">Save password</button></div></div>`;
 }
 async function pwSave(){
-  const err=m=>{$('#pwErr').innerHTML=`<p class="err" role="alert">${esc(m)}</p>`;};
+  const err=m=>{$('#pwErr').innerHTML=`<p class="err" role="alert">${esc(m)}</p>`;SFX.play('error');};
   const cur=$('#pwCur').value,n1=$('#pwNew').value,n2=$('#pwNew2').value;
   if(!cur){err('Enter your current password.');return;}
   if(n1.length<4){err('Choose a new password of at least 4 characters.');return;}
   if(n1!==n2){err('The two new passwords don\u2019t match.');return;}
   if(n1===cur){err('The new password is the same as the current one.');return;}
   let res;try{res=await authApi({action:'password',currentPassword:cur,newPassword:n1});}catch(e){err('Could not reach the server. Try again.');return;}
-  if(res.status===200){S.ui.sheet={type:'settings'};renderSheet(true);toast('Password changed');return;}
+  if(res.status===200){S.ui.sheet={type:'settings'};renderSheet(true);toast('Password changed');SFX.play('cling');return;}
   err((res.json&&res.json.message)||'Something went wrong. Please try again.');
 }
 function settingsHTML(){
@@ -1259,7 +1270,7 @@ function closeConfirm(){S.ui.confirm=null;$('#confirmRoot').innerHTML='';}
 /* ---------- actions ---------- */
 function saveTx(){
   const sh=S.ui.sheet,kind=sh.kind,isInc=kind==='income',f=readForm();
-  const fail=m=>{$('#fErr').innerHTML=`<p class="err">${esc(m)}</p>`;};
+  const fail=m=>{$('#fErr').innerHTML=`<p class="err">${esc(m)}</p>`;SFX.play('error');};
   const amt=parseFloat(f.a);
   if(!isDate(f.d))return fail('Pick a date.');
   if(!f.c)return fail(isInc?'Choose a source.':'Choose an expense type.');
@@ -1274,6 +1285,7 @@ function saveTx(){
   saveData();
   if(!badDate(f.d)){S.ui.m=mOf(f.d);S.ui.y=yOf(f.d);}
   const msg=(isNew?'Added to ':'Saved in ')+MONTHS[mOf(f.d)]+' '+yOf(f.d);
+  SFX.play('cling');
   S.ui.sheet=null;S.ui.lastFocus=null;renderSheet();render();toast(badDate(f.d)?'Saved. Check the date, it looks unusual.':msg);
 }
 /* ---------- debt PDF ---------- */
@@ -1565,10 +1577,10 @@ document.addEventListener('click',ev=>{
     case 'docdl':docDownload();break;
     case 'addcat':{
       const inp=$('#new-'+d.list),name=inp.value.trim();
-      if(!name){inp.focus();break;}
+      if(!name){inp.focus();SFX.play('error');break;}
       const L=S.data.lists[d.list];
-      if(L.some(x=>x.toLowerCase()===name.toLowerCase())){toast('That is already in the list');break;}
-      L.push(name);if(d.list!=='modes')L.sort((a,b)=>a.localeCompare(b));saveData();renderSheet();toast('Added '+name);break;}
+      if(L.some(x=>x.toLowerCase()===name.toLowerCase())){toast('That is already in the list');SFX.play('error');break;}
+      L.push(name);if(d.list!=='modes')L.sort((a,b)=>a.localeCompare(b));saveData();renderSheet();toast('Added '+name);SFX.play('cling');break;}
     case 'delcat':{
       const L=S.data.lists[d.list];S.data.lists[d.list]=L.filter(x=>x!==d.name);saveData();renderSheet();toast('Removed '+d.name+'. Existing entries keep it.');break;}
     case 'export':doExport(d.what);break;
