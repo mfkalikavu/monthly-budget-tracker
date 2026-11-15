@@ -458,6 +458,99 @@ const S={
 
 /* ---------- small helpers ---------- */
 let toastTimer=0;
+/* ---------- sounds (made with the browser's audio engine, so there are no audio files) ---------- */
+const SFX=(()=>{
+  let ctx=null,master=null,on=true;
+  try{on=localStorage.getItem('mbt.sound')!=='off';}catch(e){}
+  const ios=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const history=[];
+  function tone(c,d,f,t,dur,o){
+    o=o||{};const os=c.createOscillator(),g=c.createGain();
+    os.type=o.type||'sine';os.frequency.setValueAtTime(f,t);
+    if(o.to)os.frequency.exponentialRampToValueAtTime(o.to,t+dur);
+    g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(o.gain==null?.25:o.gain,t+(o.attack||.004));g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    os.connect(g);g.connect(d);os.start(t);os.stop(t+dur+.03);
+  }
+  function noise(c,d,t,dur,o){
+    o=o||{};const len=Math.ceil(c.sampleRate*(dur+.05)),b=c.createBuffer(1,len,c.sampleRate),ch=b.getChannelData(0);
+    for(let i=0;i<len;i++)ch[i]=Math.random()*2-1;
+    const s=c.createBufferSource();s.buffer=b;
+    const f=c.createBiquadFilter();f.type=o.type||'bandpass';f.Q.value=o.q||1;f.frequency.setValueAtTime(o.f0||2000,t);
+    if(o.f1)f.frequency.exponentialRampToValueAtTime(o.f1,t+dur);
+    const g=c.createGain();g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(o.gain||.2,t+(o.attack||.003));g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    s.connect(f);f.connect(g);g.connect(d);s.start(t);s.stop(t+dur+.05);
+  }
+  // Each sound: (audio context, output, start time)
+  const LIB={
+    tap:(c,d,t)=>{noise(c,d,t,.03,{f0:2600,q:.8,gain:.3});tone(c,d,1000,t,.05,{to:520,gain:.28});},          // button click
+    soft:(c,d,t)=>tone(c,d,720,t,.04,{to:480,gain:.14}),                                                      // back / close / cancel
+    switch:(c,d,t)=>{tone(c,d,1250,t,.03,{gain:.18});tone(c,d,1800,t+.05,.04,{gain:.18});},                  // theme / toggles
+    download:(c,d,t)=>{tone(c,d,880,t,.09,{type:'triangle',gain:.2});tone(c,d,587,t+.08,.14,{type:'triangle',gain:.22});}, // export, PDF, backup
+    upload:(c,d,t)=>{tone(c,d,587,t,.09,{type:'triangle',gain:.2});tone(c,d,880,t+.08,.14,{type:'triangle',gain:.22});},   // restore / import
+    warn:(c,d,t)=>{tone(c,d,190,t,.16,{to:95,gain:.4});noise(c,d,t,.08,{type:'lowpass',f0:500,gain:.18});},   // delete / wipe / restore original
+    lock:(c,d,t)=>{tone(c,d,784,t,.09,{type:'triangle',gain:.2});tone(c,d,523,t+.08,.16,{type:'triangle',gain:.22});}, // sign out
+    on:(c,d,t)=>[523,659,784].forEach((f,i)=>tone(c,d,f,t+i*.06,.14,{type:'triangle',gain:.2})),             // lock turned on
+    off:(c,d,t)=>[784,659,523].forEach((f,i)=>tone(c,d,f,t+i*.06,.14,{type:'triangle',gain:.2})),            // lock turned off
+    success:(c,d,t)=>{tone(c,d,784,t,.18,{gain:.22});tone(c,d,1175,t+.09,.32,{gain:.22});},                  // Face ID / passkey accepted
+    error:(c,d,t)=>{tone(c,d,200,t,.12,{type:'square',gain:.1});tone(c,d,170,t+.14,.16,{type:'square',gain:.1});},
+    refresh:(c,d,t)=>{noise(c,d,t,.3,{f0:500,f1:4200,q:1.2,gain:.22,attack:.05});tone(c,d,420,t,.28,{to:960,gain:.07});}, // pull to refresh
+    done:(c,d,t)=>{tone(c,d,880,t,.1,{to:1320,gain:.2});tone(c,d,1760,t+.02,.08,{gain:.05});},               // refreshed with new data
+  };
+  function ensure(){
+    if(!ctx){
+      const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;
+      try{ctx=new AC();}catch(e){return null;}
+      master=ctx.createGain();master.gain.value=.8;
+      const comp=ctx.createDynamicsCompressor();master.connect(comp);comp.connect(ctx.destination);
+    }
+    if(ctx.state!=='running'){try{const r=ctx.resume();if(r&&r.catch)r.catch(()=>{});}catch(e){}}
+    return ctx;
+  }
+  // Phones only allow sound after a touch, so the first touch wakes the audio engine.
+  ['touchstart','touchend','pointerdown','keydown','click'].forEach(ev=>document.addEventListener(ev,()=>{if(on&&!(ctx&&ctx.state==='running'))ensure();},{capture:true,passive:true}));
+  return {
+    ios,history,
+    names:Object.keys(LIB),
+    enabled:()=>on,
+    set(v){on=!!v;try{localStorage.setItem('mbt.sound',on?'on':'off');}catch(e){}if(on)ensure();},
+    play(name){
+      if(!on||!LIB[name])return;
+      history.push(name);if(history.length>60)history.shift();
+      const c=ensure();if(!c)return;
+      try{LIB[name](c,master,c.currentTime+.005);}catch(e){}
+    },
+    // Used by tests: draws a sound without playing it and reports how loud it is.
+    async render(name){
+      const oc=new OfflineAudioContext(1,Math.ceil(44100*.9),44100);LIB[name](oc,oc.destination,.01);
+      const b=await oc.startRendering(),x=b.getChannelData(0);let peak=0,last=0;
+      for(let i=0;i<x.length;i++){const a=Math.abs(x[i]);if(a>peak)peak=a;if(a>.002)last=i;}
+      return {peak:+peak.toFixed(3),seconds:+(last/44100).toFixed(2)};
+    },
+  };
+})();
+// Which sound each button makes. Buttons that are not listed stay silent (tabs, month arrows, filters).
+const ACT_SFX={
+  save:'tap',add:'tap',newdebt:'tap',newlent:'tap',newborrowed:'tap',repay:'tap',more:'tap',addcat:'tap',docadd:'tap',docinv:'tap',docrec:'tap',
+  authgo:'tap',pwsave:'tap',pwform:'tap',biounlock:'tap',bioon:'tap',biooff:'tap',cyes:'tap',settings:'tap',
+  theme:'switch',
+  export:'download',yearlyXlsx:'download',yearlyPdf:'download',downloadMonthlyPdf:'download',downloadDebt:'download',docdl:'download',
+  pickfile:'upload',pasteimport:'upload',
+  reseed:'warn',wipe:'warn',delete:'warn',delcat:'warn',docdel:'warn',
+  signout:'lock',biosignout:'lock',
+  syncnow:'refresh',
+  close:'soft',pwback:'soft',docback:'soft',cno:'soft',
+};
+document.addEventListener('click',ev=>{
+  const t=ev.target.closest&&ev.target.closest('[data-act]');if(!t)return;
+  if((t.dataset.act==='scrim'||t.dataset.act==='cscrim')&&ev.target!==t)return;
+  const n=ACT_SFX[t.dataset.act]||(t.classList.contains('primary')&&!/^(scrim|cscrim|tab)$/.test(t.dataset.act)?'tap':'');
+  if(n)SFX.play(n);
+},true);
+function soundSettingsHTML(){
+  const on=SFX.enabled();
+  return `<h3 class="sec">Sounds</h3><p class="hint" style="margin-bottom:10px">${on?'On. Buttons click, and refresh, download, delete and lock actions each have their own sound.':'Off. The app is silent.'} On iPhone, sounds follow the ring/silent switch.</p><button class="btn sm" data-act="sound" style="width:100%">${on?'Turn sounds off':'Turn sounds on'}</button>`;
+}
+
 function toast(msg){
   const t=$('#toast');t.textContent=msg;t.classList.add('show');
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2400);
@@ -1085,6 +1178,7 @@ function settingsHTML(){
   <h3 class="sec">Cloud storage</h3>
   <p class="hint" style="margin-bottom:10px">${SY.mode==='cloud'?'Signed in'+(SY.name?' as <span class="who">'+esc(SY.name)+'</span>':'')+(SY.email?' ('+esc(SY.email)+')':'')+'. Your entries are saved privately to your account and appear on every device where you sign in.':SY.mode==='local'?'Not connected, so your entries stay in this browser only. '+esc(SY.notice||''):'Checking the connection\u2026'}</p>
   ${SY.mode==='cloud'?'<div class="two"><button class="btn sm" data-act="syncnow">Sync now</button><button class="btn sm" data-act="signout">Sign out</button></div><button class="btn sm" data-act="pwform" style="width:100%;margin-top:10px">Change password</button>':''}
+  ${soundSettingsHTML()}
   ${SY.mode==='cloud'?bioSettingsHTML():''}
   <h3 class="sec">Backup</h3>
   <p class="hint" style="margin-bottom:10px">${SY.mode==='cloud'?'A backup file is a safety copy you keep yourself, and the way to bring in older data.':'Save a backup file now and then, and use it to move to another phone or browser.'}</p>
@@ -1455,6 +1549,7 @@ document.addEventListener('click',ev=>{
     case 'reseed':askConfirm('Restore original data?','This replaces everything with the entries from your spreadsheet, including targets and lists.','Restore',()=>{S.data=fromSeed();saveData();render();renderSheet();toast('Original data restored');});break;
     case 'wipe':askConfirm('Delete all entries?','All income and expense entries will be removed. Your targets and lists stay. You can’t undo this.','Delete all',()=>{S.data.income=[];S.data.expenses=[];saveData();render();renderSheet();toast('All entries deleted');});break;
     case 'authgo':authSubmit();break;
+    case 'sound':SFX.set(!SFX.enabled());if(SFX.enabled())SFX.play('switch');renderSheet();break;
     case 'bioon':bioEnable();break;
     case 'biooff':bioDisable();break;
     case 'biounlock':bioUnlock(false);break;
@@ -1622,14 +1717,14 @@ async function bioEnable(){
     const c=await navigator.credentials.create({publicKey:{challenge:rnd(32),rp:{name:'Monthly budget track'},user:{id:rnd(16),name:SY.email||'user',displayName:SY.name||'User'},
       pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},timeout:60000,attestation:'none'}});
     localStorage.setItem(LOCK_KEY,b64e(c.rawId));
-    toast('Lock is on for this device');
+    toast('Lock is on for this device');SFX.play('on');
   }catch(e){toast(e&&e.name==='NotAllowedError'?'Lock was not turned on':'This device could not set up the lock');}
   renderSheet();
 }
 async function bioDisable(){
   try{await bioVerify();}catch(e){toast('Could not confirm it is you');return;}
   try{localStorage.removeItem(LOCK_KEY);}catch(e){}
-  toast('Lock is off');renderSheet();
+  toast('Lock is off');SFX.play('off');renderSheet();
 }
 function bioSettingsHTML(){
   if(!BIO.avail&&!bioId())return `<h3 class="sec">App lock</h3><p class="hint">Face ID or fingerprint lock is not available in this browser. Open the app from your phone’s home screen or Chrome/Safari over a secure (https) link to use it.</p>`;
@@ -1649,12 +1744,13 @@ function showBio(msg){
 }
 async function bioUnlock(auto){
   if(BIO.busy)return;BIO.busy=true;
-  try{await bioVerify();BIO.locked=false;$('#bioRoot').innerHTML='';}
-  catch(e){if(!auto)showBio('Could not unlock. Try again.');}
+  try{await bioVerify();BIO.locked=false;$('#bioRoot').innerHTML='';SFX.play('success');}
+  catch(e){if(!auto){showBio('Could not unlock. Try again.');SFX.play('error');}}
   finally{BIO.busy=false;}
 }
 const savedToken=()=>{try{return localStorage.getItem(TOKEN_KEY)||'';}catch(e){return '';}};
-function lockNow(){if(bioId()&&(SY.token||savedToken())&&!BIO.locked){showBio('');bioUnlock(true);}}
+// On iPhone the first sound (and Face ID) needs a tap, so the Unlock button is the starting point there.
+function lockNow(){if(bioId()&&(SY.token||savedToken())&&!BIO.locked){showBio('');if(!(SFX.ios&&SFX.enabled()))bioUnlock(true);}}
 
 /* ---------- refresh: pull down, and automatically ---------- */
 async function refreshNow(manual){
@@ -1662,7 +1758,8 @@ async function refreshNow(manual){
   const before=SY.updatedAt;
   if(SY.dirty)await cloudPush();
   await cloudPull(false);
-  if(manual&&SY.updatedAt===before)toast(SY.state==='saved'?'Up to date':'Could not refresh. Check your connection.');
+  if(manual&&SY.updatedAt!==before)SFX.play('done');
+  if(manual&&SY.updatedAt===before){toast(SY.state==='saved'?'Up to date':'Could not refresh. Check your connection.');if(SY.state!=='saved')SFX.play('error');}
 }
 (function pullToRefresh(){
   const el=document.createElement('div');el.id='ptr';el.setAttribute('aria-hidden','true');document.body.appendChild(el);
@@ -1685,7 +1782,7 @@ async function refreshNow(manual){
   document.addEventListener('touchend',async()=>{
     if(!on)return;on=false;
     if(dy>=90){
-      busy=true;el.classList.add('go');el.textContent='Refreshing…';el.style.transform='translate(-50%,10px)';el.style.opacity='1';
+      SFX.play('refresh');busy=true;el.classList.add('go');el.textContent='Refreshing…';el.style.transform='translate(-50%,10px)';el.style.opacity='1';
       try{await refreshNow(true);}finally{busy=false;reset();}
     }else reset();
   });
