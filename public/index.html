@@ -480,28 +480,40 @@ const SFX=(()=>{
     const g=c.createGain();g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(o.gain||.2,t+(o.attack||.003));g.gain.exponentialRampToValueAtTime(.0001,t+dur);
     s.connect(f);f.connect(g);g.connect(d);s.start(t);s.stop(t+dur+.05);
   }
+  // Quiet, short, dry sounds in one family (soft sine tones and tiny filtered clicks), like a banking app.
   // Each sound: (audio context, output, start time)
+  const soft=(c,d,f)=>{const n=c.createBiquadFilter();n.type='lowpass';n.frequency.value=f;n.Q.value=.5;n.connect(d);return n;};
+  // A gentle bell-like note: a pure tone with a whisper of overtone, slow attack, smooth fade.
+  function note(c,d,f,t,dur,g){
+    const out=soft(c,d,3000);
+    tone(c,out,f,t,dur,{gain:g,attack:.01});
+    tone(c,out,f*2,t,dur*.7,{gain:g*.12,attack:.01});
+  }
+  // A tiny dry click with a soft body, like a quiet key press.
+  function tick(c,d,t,body,gain){
+    noise(c,d,t,.016,{f0:3000,q:.7,gain:gain*.55,attack:.001});
+    tone(c,soft(c,d,1400),body,t,.05,{to:body*.65,gain:gain,attack:.002});
+  }
   const LIB={
-    tap:(c,d,t)=>{noise(c,d,t,.03,{f0:2600,q:.8,gain:.3});tone(c,d,1000,t,.05,{to:520,gain:.28});},          // button click
-    soft:(c,d,t)=>tone(c,d,720,t,.04,{to:480,gain:.14}),                                                      // back / close / cancel
-    switch:(c,d,t)=>{tone(c,d,1250,t,.03,{gain:.18});tone(c,d,1800,t+.05,.04,{gain:.18});},                  // theme / toggles
-    download:(c,d,t)=>{tone(c,d,880,t,.09,{type:'triangle',gain:.2});tone(c,d,587,t+.08,.14,{type:'triangle',gain:.22});}, // export, PDF, backup
-    upload:(c,d,t)=>{tone(c,d,587,t,.09,{type:'triangle',gain:.2});tone(c,d,880,t+.08,.14,{type:'triangle',gain:.22});},   // restore / import
-    warn:(c,d,t)=>{tone(c,d,190,t,.16,{to:95,gain:.4});noise(c,d,t,.08,{type:'lowpass',f0:500,gain:.18});},   // delete / wipe / restore original
-    lock:(c,d,t)=>{tone(c,d,784,t,.09,{type:'triangle',gain:.2});tone(c,d,523,t+.08,.16,{type:'triangle',gain:.22});}, // sign out
-    on:(c,d,t)=>[523,659,784].forEach((f,i)=>tone(c,d,f,t+i*.06,.14,{type:'triangle',gain:.2})),             // lock turned on
-    off:(c,d,t)=>[784,659,523].forEach((f,i)=>tone(c,d,f,t+i*.06,.14,{type:'triangle',gain:.2})),            // lock turned off
-    success:(c,d,t)=>{tone(c,d,784,t,.18,{gain:.22});tone(c,d,1175,t+.09,.32,{gain:.22});},                  // Face ID / passkey accepted
-    error:(c,d,t)=>{tone(c,d,200,t,.12,{type:'square',gain:.1});tone(c,d,170,t+.14,.16,{type:'square',gain:.1});},
-    refresh:(c,d,t)=>{noise(c,d,t,.3,{f0:500,f1:4200,q:1.2,gain:.22,attack:.05});tone(c,d,420,t,.28,{to:960,gain:.07});}, // pull to refresh
-    done:(c,d,t)=>{tone(c,d,880,t,.1,{to:1320,gain:.2});tone(c,d,1760,t+.02,.08,{gain:.05});},               // refreshed with new data
+    tap:(c,d,t)=>tick(c,d,t,180,.11),                          // buttons: Add income, Add expense, debt buttons, save
+    soft:(c,d,t)=>tick(c,d,t,140,.085),                         // back / close / cancel
+    switch:(c,d,t)=>tick(c,d,t,260,.09),                       // theme and other switches
+    on:(c,d,t)=>tick(c,d,t,330,.09),                           // lock turned on
+    off:(c,d,t)=>tick(c,d,t,210,.09),                          // lock turned off
+    download:(c,d,t)=>{note(c,d,659,t,.14,.1);note(c,d,494,t+.07,.2,.1);},   // backup / export: a soft step down
+    upload:(c,d,t)=>{note(c,d,494,t,.14,.1);note(c,d,659,t+.07,.2,.1);},     // restore / import: a soft step up
+    lock:(c,d,t)=>{note(c,d,523,t,.14,.1);note(c,d,392,t+.07,.22,.1);},      // sign out
+    warn:(c,d,t)=>tone(c,soft(c,d,500),130,t,.16,{to:75,gain:.16,attack:.004}), // delete / wipe: a low, quiet thud
+    success:(c,d,t)=>{note(c,d,784,t,.2,.105);note(c,d,1175,t+.085,.4,.1);},   // Face ID / passkey accepted
+    error:(c,d,t)=>tone(c,soft(c,d,700),190,t,.12,{to:150,gain:.11,attack:.004}), // a single soft low tone
+    refresh:(c,d,t)=>{noise(c,soft(c,d,3500),t,.17,{f0:900,f1:2600,q:1,gain:.07,attack:.04});tone(c,soft(c,d,2000),480,t,.11,{to:720,gain:.08,attack:.01});}, // pull to refresh: a soft swish
+    done:(c,d,t)=>note(c,d,1319,t,.22,.07),                                      // refreshed with new data: one light note
   };
   function ensure(){
     if(!ctx){
       const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;
       try{ctx=new AC();}catch(e){return null;}
-      master=ctx.createGain();master.gain.value=.8;
-      const comp=ctx.createDynamicsCompressor();master.connect(comp);comp.connect(ctx.destination);
+      master=ctx.createGain();master.gain.value=.9;master.connect(ctx.destination);
     }
     if(ctx.state!=='running'){try{const r=ctx.resume();if(r&&r.catch)r.catch(()=>{});}catch(e){}}
     return ctx;
