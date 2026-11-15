@@ -480,40 +480,55 @@ const SFX=(()=>{
     const g=c.createGain();g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(o.gain||.2,t+(o.attack||.003));g.gain.exponentialRampToValueAtTime(.0001,t+dur);
     s.connect(f);f.connect(g);g.connect(d);s.start(t);s.stop(t+dur+.05);
   }
-  // Quiet, short, dry sounds in one family (soft sine tones and tiny filtered clicks), like a banking app.
-  // Each sound: (audio context, output, start time)
-  const soft=(c,d,f)=>{const n=c.createBiquadFilter();n.type='lowpass';n.frequency.value=f;n.Q.value=.5;n.connect(d);return n;};
-  // A gentle bell-like note: a pure tone with a whisper of overtone, slow attack, smooth fade.
-  function note(c,d,f,t,dur,g){
-    const out=soft(c,d,3000);
-    tone(c,out,f,t,dur,{gain:g,attack:.01});
-    tone(c,out,f*2,t,dur*.7,{gain:g*.12,attack:.01});
-  }
-  // A tiny dry click with a soft body, like a quiet key press.
-  function tick(c,d,t,body,gain){
-    noise(c,d,t,.016,{f0:3000,q:.7,gain:gain*.55,attack:.001});
-    tone(c,soft(c,d,1400),body,t,.05,{to:body*.65,gain:gain,attack:.002});
-  }
-  const LIB={
-    tap:(c,d,t)=>tick(c,d,t,180,.11),                          // buttons: Add income, Add expense, debt buttons, save
-    soft:(c,d,t)=>tick(c,d,t,140,.085),                         // back / close / cancel
-    switch:(c,d,t)=>tick(c,d,t,260,.09),                       // theme and other switches
-    on:(c,d,t)=>tick(c,d,t,330,.09),                           // lock turned on
-    off:(c,d,t)=>tick(c,d,t,210,.09),                          // lock turned off
-    download:(c,d,t)=>{note(c,d,659,t,.14,.1);note(c,d,494,t+.07,.2,.1);},   // backup / export: a soft step down
-    upload:(c,d,t)=>{note(c,d,494,t,.14,.1);note(c,d,659,t+.07,.2,.1);},     // restore / import: a soft step up
-    lock:(c,d,t)=>{note(c,d,523,t,.14,.1);note(c,d,392,t+.07,.22,.1);},      // sign out
-    warn:(c,d,t)=>tone(c,soft(c,d,500),130,t,.16,{to:75,gain:.16,attack:.004}), // delete / wipe: a low, quiet thud
-    success:(c,d,t)=>{note(c,d,784,t,.2,.105);note(c,d,1175,t+.085,.4,.1);},   // Face ID / passkey accepted
-    error:(c,d,t)=>tone(c,soft(c,d,700),190,t,.12,{to:150,gain:.11,attack:.004}), // a single soft low tone
-    refresh:(c,d,t)=>{noise(c,soft(c,d,3500),t,.17,{f0:900,f1:2600,q:1,gain:.07,attack:.04});tone(c,soft(c,d,2000),480,t,.11,{to:720,gain:.08,attack:.01});}, // pull to refresh: a soft swish
-    done:(c,d,t)=>note(c,d,1319,t,.22,.07),                                      // refreshed with new data: one light note
+  // Haptic-style taps, like the iPhone's Taptic Engine: short, tight, low thuds with a tiny click on top.
+  // Phone speakers are weak below ~150 Hz, so each tap has a body (~130-320 Hz) plus a faint overtone you can actually hear.
+  const KIND={
+    select:{f:300,d:.022,g:.09,v:5},   // lightest tick (like a picker moving)
+    light: {f:240,d:.032,g:.12,v:8},
+    medium:{f:180,d:.045,g:.155,v:14},
+    rigid: {f:330,d:.028,g:.13,v:10},
+    heavy: {f:130,d:.07, g:.19,v:22},
   };
+  function tap(c,d,t,kind){
+    const k=KIND[kind],lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=900;lp.Q.value=.4;lp.connect(d);
+    tone(c,lp,k.f,t,k.d,{to:k.f*.6,gain:k.g,attack:.0015});                         // the thud
+    tone(c,lp,k.f*2.1,t,k.d*.6,{type:'triangle',to:k.f*1.4,gain:k.g*.28,attack:.001}); // faint overtone so small speakers can reproduce it
+    noise(c,d,t,.006,{f0:1400,q:.6,gain:k.g*.22,attack:.0008});                       // the tiny mechanical "tick" at the start
+  }
+  // Each pattern is a list of [delay in seconds, strength]. The same pattern drives the sound and the vibration.
+  const PAT={
+    tap:[[0,'medium']],                       // buttons: Add income, Add expense, debt buttons, save
+    soft:[[0,'select']],                      // back / close / cancel
+    switch:[[0,'select']],                    // theme and other switches
+    on:[[0,'rigid']],                         // lock turned on
+    off:[[0,'light']],                        // lock turned off
+    download:[[0,'light'],[.075,'light']],    // backup / export
+    upload:[[0,'light'],[.075,'medium']],     // restore / import
+    lock:[[0,'medium'],[.08,'light']],        // sign out
+    warn:[[0,'heavy'],[.09,'heavy']],         // delete / wipe
+    success:[[0,'light'],[.085,'medium']],    // Face ID / passkey accepted (like the iPhone success tap-tap)
+    error:[[0,'medium'],[.07,'medium'],[.14,'heavy']], // not accepted
+    refresh:[[0,'medium']],                   // pull to refresh
+    done:[[0,'select']],                      // refreshed with new data
+  };
+  const LIB={};Object.keys(PAT).forEach(n=>{LIB[n]=(c,d,t)=>PAT[n].forEach(([o,k])=>tap(c,d,t+o,k));});
+  // Real haptics: iPhone Safari (17.4+) taps when a hidden switch is toggled; Android uses vibrate().
+  let hx=null;
+  function hapticOnce(kind){
+    try{
+      if(ios){
+        if(!hx){hx=document.createElement('label');hx.setAttribute('aria-hidden','true');hx.style.cssText='position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden';
+          const i=document.createElement('input');i.type='checkbox';i.setAttribute('switch','');i.tabIndex=-1;hx.appendChild(i);document.body.appendChild(hx);}
+        hx.click();
+      }else if(navigator.vibrate)navigator.vibrate(KIND[kind].v);
+    }catch(e){}
+  }
+  function buzz(name){(PAT[name]||[]).forEach(([o,k])=>{if(o===0)hapticOnce(k);else setTimeout(()=>hapticOnce(k),o*1000);});}
   function ensure(){
     if(!ctx){
       const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;
       try{ctx=new AC();}catch(e){return null;}
-      master=ctx.createGain();master.gain.value=.9;master.connect(ctx.destination);
+      master=ctx.createGain();master.gain.value=1;master.connect(ctx.destination);
     }
     if(ctx.state!=='running'){try{const r=ctx.resume();if(r&&r.catch)r.catch(()=>{});}catch(e){}}
     return ctx;
@@ -528,6 +543,7 @@ const SFX=(()=>{
     play(name){
       if(!on||!LIB[name])return;
       history.push(name);if(history.length>60)history.shift();
+      buzz(name);
       const c=ensure();if(!c)return;
       try{LIB[name](c,master,c.currentTime+.005);}catch(e){}
     },
@@ -560,7 +576,7 @@ document.addEventListener('click',ev=>{
 },true);
 function soundSettingsHTML(){
   const on=SFX.enabled();
-  return `<h3 class="sec">Sounds</h3><p class="hint" style="margin-bottom:10px">${on?'On. Buttons click, and refresh, download, delete and lock actions each have their own sound.':'Off. The app is silent.'} On iPhone, sounds follow the ring/silent switch.</p><button class="btn sm" data-act="sound" style="width:100%">${on?'Turn sounds off':'Turn sounds on'}</button>`;
+  return `<h3 class="sec">Sounds &amp; haptics</h3><p class="hint" style="margin-bottom:10px">${on?'On. Taps give a short haptic-style tick, with a real vibration on iPhone and Android phones that support it. Sounds follow the ring/silent switch; the vibration does not.':'Off. No sounds or vibration.'}</p><button class="btn sm" data-act="sound" style="width:100%">${on?'Turn sounds &amp; haptics off':'Turn sounds &amp; haptics on'}</button>`;
 }
 
 function toast(msg){
