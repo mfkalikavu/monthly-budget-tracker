@@ -8,6 +8,7 @@ Sign in on any phone or laptop and you see your own data, kept in sync.
 ```
 public/index.html      the app (no data inside)
 public/docgen.js       makes the invoice and receipt PDFs (no external library)
+public/sounds.js       the two recorded app sounds (Face ID chime and follow tick), embedded as base64
 public/docs/           fonts, QR code, receipt header art and signature used by those PDFs
 api/auth.js            create account / sign in
 api/data.js            the storage API (one private record per signed-in person)

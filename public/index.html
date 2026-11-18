@@ -292,6 +292,7 @@ input[type=checkbox]{accent-color:var(--ink)}
 <div id="lockRoot"></div>
 <div id="bioRoot"></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="sounds.js"></script>
 <script>
 'use strict';
 const SEED=null;
@@ -510,16 +511,37 @@ const SFX=(()=>{
     error:[[0,'medium'],[.07,'medium'],[.14,'heavy']], // not accepted
     nav:[[0,'light']],                        // switching section: Dashboard, Income, Expenses, Debt, Yearly
     cling:[[0,'light'],[.085,'medium']],      // saved successfully
+    follow:[[0,'medium']],                    // Add income / Add expense / Debt / Settings
     refresh:[],                               // pull to refresh: sound only, no tap
     done:[],
   };
   const LIB={};Object.keys(PAT).forEach(n=>{LIB[n]=(c,d,t)=>PAT[n].forEach(([o,k])=>tap(c,d,t+o,k));});
-  // Clear, bright "cling": a glass / small-bell ping. Used when something is saved and when Face ID accepts you.
+  // Fallback "cling": a glass / small-bell ping, used only if the recorded chime in sounds.js is missing.
   function bell(c,d,t,f,dur,g){
     [[1,1,1],[2.76,.38,.55],[5.4,.16,.32]].forEach(([m,a,l])=>tone(c,d,f*m,t,dur*l,{gain:g*a,attack:.002}));
   }
   const cling=(c,d,t)=>{bell(c,d,t,1568,.7,.12);bell(c,d,t+.07,2093,.5,.08);};
-  LIB.cling=cling;LIB.success=cling;
+  // Real recorded sounds (see sounds.js). They are decoded once at start-up; until they are ready, the old synthesized sounds are used.
+  const BUF={};
+  (function decodeAll(){
+    const D=window.MBT_SOUNDS;if(!D)return;
+    const OC=window.OfflineAudioContext||window.webkitOfflineAudioContext;if(!OC)return;
+    Object.keys(D).forEach(k=>{
+      try{
+        const bin=atob(D[k].split(',')[1]),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+        const oc=new OC(1,1,44100);
+        new Promise((ok,no)=>{const p=oc.decodeAudioData(u.buffer,ok,no);if(p&&p.catch)p.catch(no);}).then(b=>{BUF[k]=b;}).catch(()=>{});
+      }catch(e){}
+    });
+  })();
+  function sample(key,gain,c,d,t){
+    const b=BUF[key];if(!b)return false;
+    const s=c.createBufferSource(),g=c.createGain();s.buffer=b;g.gain.value=gain;s.connect(g);g.connect(d);s.start(t);return true;
+  }
+  // Face ID success chime: login, Face ID unlock, and every successful save.
+  LIB.cling=LIB.success=(c,d,t)=>{if(!sample('faceid',1,c,d,t))cling(c,d,t);};
+  // Follow-button tick: Add income, Add expense, Debt buttons and the Settings icon.
+  LIB.follow=(c,d,t)=>{if(!sample('follow',1,c,d,t))tap(c,d,t,'medium');};
   // Refresh: a soft, standard "whoosh" (air sweeping up) when you pull, and one small light ping when new data arrives.
   LIB.refresh=(c,d,t)=>noise(c,d,t,.36,{f0:350,f1:3200,q:.7,gain:.32,attack:.1});
   LIB.done=(c,d,t)=>bell(c,d,t,2349,.3,.07);
@@ -569,8 +591,9 @@ const SFX=(()=>{
 })();
 // Which sound each button makes. Buttons that are not listed stay silent (tabs, month arrows, filters).
 const ACT_SFX={
-  tab:'nav',add:'tap',newdebt:'tap',newlent:'tap',newborrowed:'tap',repay:'tap',more:'tap',docadd:'tap',docinv:'tap',docrec:'tap',
-  authgo:'tap',pwform:'tap',biounlock:'tap',bioon:'tap',biooff:'tap',cyes:'tap',settings:'tap',
+  tab:'nav',add:'follow',newdebt:'follow',newlent:'follow',newborrowed:'follow',settings:'follow',   // follow-button sound
+  repay:'tap',more:'tap',docadd:'tap',docinv:'tap',docrec:'tap',
+  authgo:'tap',pwform:'tap',biounlock:'tap',bioon:'tap',biooff:'tap',cyes:'tap',
   theme:'switch',
   export:'download',yearlyXlsx:'download',yearlyPdf:'download',downloadMonthlyPdf:'download',downloadDebt:'download',docdl:'download',
   pickfile:'upload',pasteimport:'upload',
@@ -582,7 +605,7 @@ const ACT_SFX={
 document.addEventListener('click',ev=>{
   const t=ev.target.closest&&ev.target.closest('[data-act]');if(!t)return;
   if((t.dataset.act==='scrim'||t.dataset.act==='cscrim')&&ev.target!==t)return;
-  const n=ACT_SFX[t.dataset.act]||(t.classList.contains('primary')&&!/^(scrim|cscrim|tab|save|pwsave|addcat)$/.test(t.dataset.act)?'tap':'');
+  const n=(t.dataset.act==='tab'&&t.dataset.tab==='debt'?'follow':ACT_SFX[t.dataset.act])||(t.classList.contains('primary')&&!/^(scrim|cscrim|tab|save|pwsave|addcat)$/.test(t.dataset.act)?'tap':'');
   if(n)SFX.play(n);
 },true);
 function soundSettingsHTML(){
@@ -1734,6 +1757,7 @@ async function authSubmit(){
   }
   if(res.status!==200||!res.json||!res.json.token){showAuth((res.json&&res.json.message)||'Something went wrong. Please try again.');return;}
   await finishAuth(res);
+  SFX.play('success');
   if(rs)toast('Password changed. You are signed in.');
 }
 
