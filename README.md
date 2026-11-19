@@ -8,7 +8,6 @@ Sign in on any phone or laptop and you see your own data, kept in sync.
 ```
 public/index.html      the app (no data inside)
 public/docgen.js       makes the invoice and receipt PDFs (no external library)
-public/sounds.js       the two recorded app sounds (Face ID chime and follow tick), embedded as base64
 public/docs/           fonts, QR code, receipt header art and signature used by those PDFs
 api/auth.js            create account / sign in
 api/data.js            the storage API (one private record per signed-in person)
@@ -47,7 +46,7 @@ Do not upload `YOUR-DATA-backup.json` to GitHub or Vercel. It is only for step 5
 - **Forgot password:** on the sign-in screen, tap Forgot password, enter your email, and a 6-digit code (valid 15 minutes) is emailed to you. This needs the two email settings below.
 - **Change password:** Settings, Change password.
 - **Face ID / fingerprint lock:** Settings, App lock. It works per device, uses the phone's own face or fingerprint check, and locks again after a minute away. It needs the https link (your Vercel address) and a phone or laptop with Face ID, fingerprint or Windows Hello.
-- **Sounds and haptics:** buttons and section tabs give a short, soft haptic-style tap. A bright "cling" means something was saved (Add income, Add expense, debt entries, new list items, password change) or that Face ID accepted you; a low triple tap means it was not accepted or something is missing. Pulling down to refresh plays a soft whoosh, with one light ping when new data arrives. Phones that support it also vibrate (iPhone Safari 17.4 or newer, and Android). Sounds are generated in the browser, so there are no audio files. Turn them off in Settings, Sounds & haptics. On iPhone the sound follows the ring/silent switch, but the haptic does not.
+- **Sounds and haptics:** the app uses two sounds rebuilt from recordings of other apps. A soft two-note chime (low B, then the B above it) plays when you sign in, when Face ID accepts you, and when data is saved. A short "pop" (a tiny tick followed by a brief low pop) plays on Add income, Add expense, the debt buttons and the Settings icon. Section tabs and other buttons give a light haptic-style tap; a low triple tap means something was not accepted; pulling down to refresh plays a soft whoosh. Phones that support it also vibrate (iPhone Safari 17.4 or newer, and Android). The sounds are generated in the browser, so there are no audio files. Turn them off in Settings, Sounds & haptics. On iPhone the sound follows the ring/silent switch, but the haptic does not.
 - **Refresh:** pull the page down on a phone to fetch changes made on another device. The app also checks quietly every 20 seconds while it is open.
 - The Dashboard greets you by name ("Hi, ..."), using the name you gave when creating the account.
 - **Settings, Change password** lets a signed-in person change their password (needs the current one).
